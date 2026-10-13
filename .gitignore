@@ -6,3 +6,6 @@ local.env
 
 __pycache__/
 *.pyc
+
+# documentos pessoais (contratos, faturas)
+docs/*.pdf
