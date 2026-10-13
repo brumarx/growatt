@@ -9,8 +9,10 @@ import os
 import socket
 import sqlite3
 import struct
+import statistics
 import threading
 import time
+from collections import deque
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -40,17 +42,27 @@ BATTERIES = [
     {"name": "10 kWh", "usable": 9.0, "max_w": 4200,
      "cost": float(os.environ.get("SOLAR_BATTERY_COST_10", "3500"))},
 ]
-BATTERY_EFF = 0.95  # eficiência em cada sentido (≈ 90% ida e volta)
+BATTERY_EFF = 0.95
+# Eventos: leitura rápida só do consumo, para apanhar aparelhos que ligam poucos segundos
+FAST_SECONDS = int(os.environ.get("SOLAR_FAST_SECONDS", "5"))
+EVENT_W = float(os.environ.get("SOLAR_EVENT_W", "300"))  # salto mínimo acima do consumo de fundo  # eficiência em cada sentido (≈ 90% ida e volta)
 BASE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE, "solar.db")
 
 _lock = threading.Lock()
+_fast = {"load": None, "ts": None, "errors": 0}  # última leitura rápida do consumo
+_bus = threading.Lock()  # o dongle aceita mal ligações em simultâneo: uma leitura de cada vez
 _last = {"ok": False, "error": "ainda sem leitura", "ts": None}
 
 
 # ---------------------------------------------------------------- Modbus
 def read_input_registers(start, count):
     """Função 04 (input registers). Nunca escreve no inversor."""
+    with _bus:
+        return _read(start, count)
+
+
+def _read(start, count):
     with socket.create_connection((INVERTER_IP, INVERTER_PORT), timeout=8) as s:
         s.sendall(struct.pack(">HHHBBHH", 1, 0, 6, UNIT_ID, 4, start, count))
         head = b""
@@ -124,6 +136,12 @@ def init_db():
         con.execute("CREATE INDEX IF NOT EXISTS idx_samples_day ON samples(substr(ts,1,10))")
 
 
+def init_events():
+    with db() as con:
+        con.execute("CREATE TABLE IF NOT EXISTS events (start TEXT PRIMARY KEY, end TEXT, secs REAL, "
+                    "base_w REAL, peak_w REAL, avg_w REAL, wh REAL)")
+
+
 def store(ts, d):
     with db() as con:
         con.execute("INSERT OR REPLACE INTO samples (ts, %s) VALUES (?%s)"
@@ -164,6 +182,76 @@ def poller():
             with _lock:
                 _last = {**_last, "ok": False, "error": str(e), "err_ts": ts}
         time.sleep(POLL_SECONDS)
+
+
+def fast_poller():
+    """Lê o consumo a cada FAST_SECONDS e guarda cada salto acima do consumo de fundo:
+    início, duração, potência e energia. Serve para identificar aparelhos."""
+    hist = deque(maxlen=max(12, 300 // FAST_SECONDS))  # últimos ~5 min, para o consumo de fundo
+    ev = None
+    while True:
+        t = datetime.now()
+        try:
+            r = read_input_registers(3045, 2)
+            load = ((r[0] << 16) | r[1]) / 10.0
+            _fast.update(load=load, ts=t.strftime("%Y-%m-%d %H:%M:%S"))
+        except Exception:
+            _fast["errors"] += 1
+            time.sleep(FAST_SECONDS)
+            continue
+        if ev is None:
+            base = statistics.median(hist) if len(hist) >= 6 else None
+            if base is not None and load > base + EVENT_W:
+                ev = {"start": t, "last": t, "base": base, "peak": load, "sum": 0.0, "n": 0, "wh": 0.0, "low": 0}
+            else:
+                hist.append(load)
+        if ev is not None:
+            dt = (t - ev["last"]).total_seconds() or FAST_SECONDS
+            ev["last"] = t
+            if load < ev["base"] + EVENT_W / 2:
+                ev["low"] += 1
+            else:
+                ev["low"] = 0
+                ev["peak"] = max(ev["peak"], load)
+                ev["sum"] += load - ev["base"]
+                ev["n"] += 1
+                ev["wh"] += (load - ev["base"]) * min(dt, 30) / 3600
+            # termina com 2 leituras seguidas de volta ao fundo, ou ao fim de 3 h
+            if ev["low"] >= 2 or (t - ev["start"]).total_seconds() > 10800:
+                end = t - timedelta(seconds=FAST_SECONDS * ev["low"])
+                secs = max((end - ev["start"]).total_seconds(), FAST_SECONDS)
+                try:
+                    with db() as con:
+                        con.execute("INSERT OR REPLACE INTO events VALUES (?,?,?,?,?,?,?)", (
+                            ev["start"].strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S"),
+                            round(secs), round(ev["base"]), round(ev["peak"]),
+                            round(ev["sum"] / max(ev["n"], 1)), round(ev["wh"], 1)))
+                except Exception:
+                    pass
+                ev = None
+        time.sleep(max(0.5, FAST_SECONDS - (datetime.now() - t).total_seconds()))
+
+
+def api_events(days=7):
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    with db() as con:
+        rows = [dict(r) for r in con.execute(
+            "SELECT * FROM events WHERE start>=? ORDER BY start DESC", (since,))]
+    # agrupa por potência acima do fundo (degraus de 100 W): o mesmo aparelho puxa sempre o mesmo
+    groups = {}
+    for r in rows:
+        k = int(round(r["avg_w"] / 100.0) * 100)
+        g = groups.setdefault(k, {"watts": k, "count": 0, "secs": 0, "wh": 0.0, "times": []})
+        g["count"] += 1
+        g["secs"] += r["secs"]
+        g["wh"] += r["wh"]
+        g["times"].append(r["start"][5:16])
+    out = []
+    for g in sorted(groups.values(), key=lambda g: -g["count"]):
+        out.append({"watts": g["watts"], "count": g["count"], "avg_secs": round(g["secs"] / g["count"]),
+                    "wh_day": round(g["wh"] / days, 1), "times": g["times"][:8]})
+    return {"days": days, "threshold_w": EVENT_W, "fast_seconds": FAST_SECONDS,
+            "events": rows[:50], "groups": out}
 
 
 # ---------------------------------------------------------------- API
@@ -325,7 +413,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps({**now, "price": PRICE_KWH, "price_label": PRICE_LABEL,
                                                "export_price": EXPORT_PRICE, "install_date": INSTALL_DATE,
                                                "install_days": days, "kwp": KWP,
-                                               "rent_month": RENT_MONTH}), "application/json")
+                                               "rent_month": RENT_MONTH, "fast": _fast}), "application/json")
+        if path == "/api/events":
+            n = max(1, min(int(params.get("days", "7")), 90))
+            return self._send(200, json.dumps(api_events(n)), "application/json")
         if path == "/api/battery":
             n = max(1, min(int(params.get("days", "30")), 400))
             return self._send(200, json.dumps(api_battery(n)), "application/json")
@@ -345,6 +436,8 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     init_db()
+    init_events()
     load_last()
     threading.Thread(target=poller, daemon=True).start()
+    threading.Thread(target=fast_poller, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), Handler).serve_forever()

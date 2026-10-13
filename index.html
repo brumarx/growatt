@@ -150,6 +150,23 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
   </section>
 
   <section>
+    <h3>Eventos de consumo</h3>
+    <div class="card">
+      <div class="sub" id="ev_note" style="margin:0 0 8px">–</div>
+      <h2>Por aparelho (mesma potência)</h2>
+      <div class="scroll"><table class="t">
+        <thead><tr><th>Potência</th><th>Vezes</th><th>Duração média</th><th>Energia/dia</th><th>Quando</th></tr></thead>
+        <tbody id="ev_groups"></tbody>
+      </table></div>
+      <h2 style="margin-top:14px">Últimos eventos</h2>
+      <div class="scroll"><table class="t">
+        <thead><tr><th>Início</th><th>Duração</th><th>Acima do fundo</th><th>Pico</th><th>Fundo</th><th>Energia</th></tr></thead>
+        <tbody id="ev_rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section>
     <h3>Bateria: quanto teria poupado</h3>
     <div class="card">
       <div class="sub" id="bat_note" style="margin:0 0 8px">–</div>
@@ -265,6 +282,19 @@ async function loadBattery(){
     + `<td>${o.payback_years == null ? '–' : fmt(o.payback_years,1) + ' anos'}</td></tr>`).join('');
 }
 
+const dur = s => s < 60 ? s + ' s' : s < 3600 ? Math.floor(s/60) + ' min ' + (s%60 ? s%60 + ' s' : '') : Math.floor(s/3600) + ' h ' + Math.round(s%3600/60) + ' min';
+async function loadEvents(){
+  const e = await j('/api/events?days=7');
+  $('ev_note').textContent = `Consumo lido a cada ${e.fast_seconds} s. Um evento é um salto de pelo menos ${fmt(e.threshold_w)} W acima do consumo de fundo (mediana dos 5 min anteriores). Últimos ${e.days} dias.`;
+  const none = (n, msg) => `<tr><td colspan="${n}" class="sub">${msg}</td></tr>`;
+  $('ev_groups').innerHTML = e.groups.length ? e.groups.map(g => `<tr><td>≈ ${fmt(g.watts)} W</td><td>${g.count}</td>`
+    + `<td>${dur(g.avg_secs)}</td><td>${fmt(g.wh_day)} Wh</td><td style="white-space:normal">${g.times.map(t => t.slice(6)).join(', ')}</td></tr>`).join('')
+    : none(5, 'Ainda sem eventos registados.');
+  $('ev_rows').innerHTML = e.events.length ? e.events.slice(0, 20).map(r => `<tr><td>${r.start.slice(8,10)}/${r.start.slice(5,7)} ${r.start.slice(11,19)}</td>`
+    + `<td>${dur(r.secs)}</td><td>${fmt(r.avg_w)} W</td><td>${fmt(r.peak_w)} W</td><td>${fmt(r.base_w)} W</td><td>${fmt(r.wh,1)} Wh</td></tr>`).join('')
+    : none(6, 'Ainda sem eventos registados.');
+}
+
 function baseOpts(){
   const ink = css('--muted'), line = css('--line');
   return {responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
@@ -302,12 +332,13 @@ $('prev').onclick = () => shift(-1);
 $('next').onclick = () => shift(1);
 
 async function tick(){ try { await loadNow(); } catch(e){} }
-tick(); loadDay(); loadDays(); loadTip(); loadBattery();
+tick(); loadDay(); loadDays(); loadTip(); loadBattery(); loadEvents();
 setInterval(tick, 30000);
 setInterval(() => { if (day === localDay(new Date())) loadDay(); }, 60000);
 setInterval(loadDays, 600000);
 setInterval(loadTip, 1800000);
 setInterval(loadBattery, 1800000);
+setInterval(loadEvents, 60000);
 </script>
 </body>
 </html>

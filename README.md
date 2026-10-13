@@ -25,6 +25,7 @@ O programa lê o inversor diretamente por **Modbus TCP**, através do dongle Wi-
 - **Dica:** a janela de horas com mais excedente, calculada a partir das leituras reais dos últimos 7 dias. Serve para saber quando ligar as máquinas.
 - **Bateria:** uma simulação, minuto a minuto, de quanto teriam poupado baterias de 5 e 10 kWh, com o retorno em anos.
 - **Excedente:** quanto valeria a energia enviada à rede se fosse vendida.
+- **Eventos de consumo:** o consumo é lido a cada 5 s. Cada salto de 300 W ou mais acima do consumo de fundo fica registado com a hora, a duração, a potência e a energia. Os eventos com a mesma potência são agrupados, porque correspondem normalmente ao mesmo aparelho.
 
 ### Guia: bateria e venda à rede (`/guia`)
 
@@ -57,6 +58,7 @@ Inversor Growatt ──Modbus TCP :502──▶ solar.py ──▶ solar.db (SQL
 | `GET /api/today?day=AAAA-MM-DD` | A curva de potência do dia (painéis, casa, compra, envio) |
 | `GET /api/days?n=30` | Os totais diários de kWh dos últimos *n* dias (máximo 400) |
 | `GET /api/tip` | A melhor janela de horas para gastar o excedente |
+| `GET /api/events?days=7` | Os eventos de consumo e os grupos por potência |
 | `GET /api/battery?days=30` | A simulação de baterias de 5 e 10 kWh com as leituras reais |
 
 Os totais por dia calculam-se pela diferença dos contadores totais do inversor. Os contadores "hoje" do próprio inversor só voltam a zero quando ele acorda, por isso de madrugada ainda mostrariam o dia anterior.
@@ -200,6 +202,8 @@ Tudo se configura por variáveis de ambiente. Para as definir, acrescente linhas
 | `SOLAR_INSTALL_DATE` | `2026-04-06` | A data de instalação, para as médias por dia |
 | `SOLAR_KWP` | `4.0` | A potência dos painéis em kWp |
 | `SOLAR_RENT_MONTH` | `0` | A renda mensal, se o sistema for alugado. Mostra a poupança contra o aluguer |
+| `SOLAR_FAST_SECONDS` | `5` | O intervalo da leitura rápida do consumo, para os eventos |
+| `SOLAR_EVENT_W` | `300` | O salto mínimo, em W, para contar como evento |
 | `SOLAR_EXPORT_PRICE` | `0.03` | O preço do kWh vendido à rede, em € |
 | `SOLAR_BATTERY_COST_5` | `2100` | O custo de uma bateria de 5 kWh já instalada, em € |
 | `SOLAR_BATTERY_COST_10` | `3500` | O custo de uma bateria de 10 kWh já instalada, em € |
