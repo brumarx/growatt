@@ -150,6 +150,30 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
   </section>
 
   <section>
+    <h3>Estudos automáticos</h3>
+    <div class="grid g2">
+      <div class="card">
+        <h2>Potência contratada</h2>
+        <div id="pw_verdict" style="margin-bottom:8px">–</div>
+        <div class="scroll"><table class="t">
+          <thead><tr><th>Potência</th><th>Limite</th><th>Folga</th><th>Dias acima</th><th>€/ano vs atual</th></tr></thead>
+          <tbody id="pw_rows"></tbody>
+        </table></div>
+        <div class="sub" id="pw_top" style="margin-top:8px"></div>
+      </div>
+      <div class="card">
+        <h2>Simples ou bi-horária</h2>
+        <div id="tf_verdict" style="margin-bottom:8px">–</div>
+        <div class="scroll"><table class="t">
+          <thead><tr><th>Opção</th><th>Comprado em vazio</th><th>Custo/ano</th><th>Diferença</th></tr></thead>
+          <tbody id="tf_rows"></tbody>
+        </table></div>
+        <div class="sub" id="tf_note" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
     <h3>Eventos de consumo</h3>
     <div class="card">
       <div class="sub" id="ev_note" style="margin:0 0 8px">–</div>
@@ -299,6 +323,38 @@ async function loadEvents(){
     : none(6, 'Ainda sem eventos registados.');
 }
 
+const kva = v => fmt(v, v % 1 ? 2 : 0).replace(/,?0+$/, '') + ' kVA';
+async function loadStudies(){
+  const [p, t] = await Promise.all([j('/api/power?days=30'), j('/api/tariff?days=30')]);
+  // potência contratada
+  const cur = p.options.find(o => o.current);
+  $('pw_rows').innerHTML = p.options.map(o => `<tr${o.current ? ' style="font-weight:700"' : ''}><td>${kva(o.kva)}${o.current ? ' (atual)' : ''}</td>`
+    + `<td>${fmt(o.limit_w)} W</td><td style="color:var(${o.margin_w < 0 ? '--buy' : o.margin_w < o.limit_w * 0.15 ? '--sun' : '--sell'})">${o.margin_w >= 0 ? '+' : ''}${fmt(o.margin_w)} W</td>`
+    + `<td>${o.days_over}</td><td>${o.current ? '–' : (o.eur_year_vs_current > 0 ? '+' : '') + eur(o.eur_year_vs_current)}</td></tr>`).join('');
+  const best = p.best_kva;
+  $('pw_verdict').innerHTML = `Maior compra à rede em ${p.days} dias: <b>${fmt(p.peak_w)} W</b>. `
+    + (best == null ? `<span class="warn">Acima de todas as opções com folga de 15%.</span>`
+      : best === p.current_kva ? `<b>${kva(p.current_kva)} é a opção certa</b>: é a menor com pelo menos 15% de folga.`
+      : `<b>${kva(best)}</b> chegaria, com 15% de folga, e pouparia <b>${eur(-p.options.find(o => o.kva === best).eur_year_vs_current)}/ano</b>.`)
+    + (p.days < 30 ? ` <span class="warn">Só ${p.days} dias de dados.</span>` : '');
+  $('pw_top').innerHTML = 'Maiores picos: ' + p.top.map(r => `${fmt(r.w)} W (${r.ts.slice(8,10)}/${r.ts.slice(5,7)} ${r.ts.slice(11,16)})`).join(' · ')
+    + '. Preços da potência abaixo de 6,9 kVA estimados por proporção (sem IVA).';
+  // simples ou bi-horária
+  if (!t.days){ $('tf_verdict').textContent = 'Ainda sem leituras.'; return; }
+  const name = {diario:'Bi-horária, ciclo diário', semanal:'Bi-horária, ciclo semanal'};
+  $('tf_rows').innerHTML = `<tr style="font-weight:700"><td>Simples (atual)</td><td>–</td><td>${eur(t.simple_eur_year)}</td><td>–</td></tr>`
+    + t.cycles.map(c => `<tr><td>${name[c.cycle]}</td><td>${fmt(c.vazio_share)}%</td><td>${eur(c.eur_year)}</td>`
+    + `<td style="color:var(${c.diff_eur_year > 0 ? '--buy' : '--sell'})">${c.diff_eur_year > 0 ? '+' : ''}${eur(c.diff_eur_year)}</td></tr>`).join('');
+  const bestC = t.cycles.reduce((a, b) => a.diff_eur_year < b.diff_eur_year ? a : b);
+  $('tf_verdict').innerHTML = (bestC.diff_eur_year < 0
+      ? `<b>${name[bestC.cycle]}</b> pouparia <b>${eur(-bestC.diff_eur_year)}/ano</b>.`
+      : `<b>A simples é a mais barata.</b> A bi-horária só empata com <b>${fmt(t.breakeven_share)}%</b> da compra em vazio (está em ${fmt(t.cycles[0].vazio_share)}% no ciclo diário).`)
+    + (t.days < 30 ? ` <span class="warn">Só ${fmt(t.days,1)} dias de dados.</span>` : '');
+  $('tf_note').innerHTML = `Compra à rede: ${fmt(t.import_kwh_day,1)} kWh/dia (≈ ${fmt(t.import_kwh_year)} kWh/ano). Sem IVA e sem descontos. `
+    + `Simples ${fmt(t.simple_kwh,4)} €/kWh + ${fmt(t.simple_pot,4)} €/dia; bi-horária ${fmt(t.bi_prices[0],4)} / ${fmt(t.bi_prices[1],4)} €/kWh + ${fmt(t.bi_prices[2],4)} €/dia. `
+    + `Vazio: diário 22h–8h; semanal 0h–7h nos dias úteis, sábado em parte, domingo todo.`;
+}
+
 function baseOpts(){
   const ink = css('--muted'), line = css('--line');
   return {responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
@@ -336,13 +392,14 @@ $('prev').onclick = () => shift(-1);
 $('next').onclick = () => shift(1);
 
 async function tick(){ try { await loadNow(); } catch(e){} }
-tick(); loadDay(); loadDays(); loadTip(); loadBattery(); loadEvents();
+tick(); loadDay(); loadDays(); loadTip(); loadBattery(); loadEvents(); loadStudies();
 setInterval(tick, 5000);
 setInterval(() => { if (day === localDay(new Date())) loadDay(); }, 60000);
 setInterval(loadDays, 600000);
 setInterval(loadTip, 1800000);
 setInterval(loadBattery, 1800000);
 setInterval(loadEvents, 60000);
+setInterval(loadStudies, 600000);
 </script>
 </body>
 </html>

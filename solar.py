@@ -45,12 +45,20 @@ BATTERIES = [
 BATTERY_EFF = 0.95
 # Eventos: leitura rápida só do consumo, para apanhar aparelhos que ligam poucos segundos
 FAST_SECONDS = int(os.environ.get("SOLAR_FAST_SECONDS", "5"))
-EVENT_W = float(os.environ.get("SOLAR_EVENT_W", "300"))  # salto mínimo acima do consumo de fundo  # eficiência em cada sentido (≈ 90% ida e volta)
+EVENT_W = float(os.environ.get("SOLAR_EVENT_W", "300"))  # salto mínimo acima do consumo de fundo
+# Estudos de tarifa (preços SEM IVA e SEM descontos, para comparar opções iguais entre si)
+POWER_KVA = float(os.environ.get("SOLAR_POWER_KVA", "6.9"))
+# potência €/dia por kVA; os valores abaixo de 6,9 são proporcionais (estimativa): confirmar com o comercializador
+POWER_PRICES = {float(k): float(v) for k, v in (x.split(":") for x in os.environ.get(
+    "SOLAR_POWER_PRICES", "3.45:0.3150,4.6:0.4100,5.75:0.4940,6.9:0.5780").split(","))}
+SIMPLE_KWH = float(os.environ.get("SOLAR_SIMPLE_KWH", "0.1671"))
+# bi-horária: fora de vazio, vazio (€/kWh) e potência 6,9 kVA (€/dia)
+BI_PRICES = [float(x) for x in os.environ.get("SOLAR_BI_PRICES", "0.1916,0.1108,0.7645").split(",")]  # eficiência em cada sentido (≈ 90% ida e volta)
 BASE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE, "solar.db")
 
 _lock = threading.Lock()
-_fast = {"load": None, "ts": None, "errors": 0}  # última leitura rápida do consumo
+_fast = {"load": None, "imp": None, "ts": None, "errors": 0}  # última leitura rápida do consumo
 _bus = threading.Lock()  # o dongle aceita mal ligações em simultâneo: uma leitura de cada vez
 _last = {"ok": False, "error": "ainda sem leitura", "ts": None}
 
@@ -138,6 +146,8 @@ def init_db():
 
 def init_events():
     with db() as con:
+        con.execute("CREATE TABLE IF NOT EXISTS peaks (day TEXT PRIMARY KEY, imp_w REAL, imp_ts TEXT, "
+                    "load_w REAL, load_ts TEXT)")
         con.execute("CREATE TABLE IF NOT EXISTS events (start TEXT PRIMARY KEY, end TEXT, secs REAL, "
                     "base_w REAL, peak_w REAL, avg_w REAL, wh REAL)")
 
@@ -189,12 +199,31 @@ def fast_poller():
     início, duração, potência e energia. Serve para identificar aparelhos."""
     hist = deque(maxlen=max(12, 300 // FAST_SECONDS))  # últimos ~5 min, para o consumo de fundo
     ev = None
+    peak = {"day": None, "imp_w": 0, "load_w": 0}
     while True:
         t = datetime.now()
         try:
-            r = read_input_registers(3045, 2)
-            load = ((r[0] << 16) | r[1]) / 10.0
-            _fast.update(load=load, ts=t.strftime("%Y-%m-%d %H:%M:%S"))
+            r = read_input_registers(3041, 6)  # compra, venda e consumo
+            imp = ((r[0] << 16) | r[1]) / 10.0
+            load = ((r[4] << 16) | r[5]) / 10.0
+            ts = t.strftime("%Y-%m-%d %H:%M:%S")
+            _fast.update(load=load, imp=imp, ts=ts)
+            # pico do dia (compra à rede e consumo), para o estudo da potência contratada
+            day = ts[:10]
+            if peak["day"] != day:
+                peak = {"day": day, "imp_w": 0, "load_w": 0}
+            if imp > peak["imp_w"] or load > peak["load_w"]:
+                with db() as con:
+                    if imp > peak["imp_w"]:
+                        peak["imp_w"] = imp
+                        con.execute("INSERT INTO peaks (day, imp_w, imp_ts) VALUES (?,?,?) ON CONFLICT(day) DO "
+                                    "UPDATE SET imp_w=excluded.imp_w, imp_ts=excluded.imp_ts "
+                                    "WHERE excluded.imp_w > coalesce(peaks.imp_w, 0)", (day, imp, ts))
+                    if load > peak["load_w"]:
+                        peak["load_w"] = load
+                        con.execute("INSERT INTO peaks (day, load_w, load_ts) VALUES (?,?,?) ON CONFLICT(day) DO "
+                                    "UPDATE SET load_w=excluded.load_w, load_ts=excluded.load_ts "
+                                    "WHERE excluded.load_w > coalesce(peaks.load_w, 0)", (day, load, ts))
         except Exception:
             _fast["errors"] += 1
             time.sleep(FAST_SECONDS)
@@ -230,6 +259,100 @@ def fast_poller():
                     pass
                 ev = None
         time.sleep(max(0.5, FAST_SECONDS - (datetime.now() - t).total_seconds()))
+
+
+def api_power(days=30):
+    """Picos de compra à rede contra o limite de cada potência contratada."""
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    with db() as con:
+        fast = {r["day"]: dict(r) for r in con.execute("SELECT * FROM peaks WHERE day>=?", (since,))}
+        # antes da leitura rápida: o máximo das leituras de minuto
+        slow = con.execute("SELECT substr(ts,1,10) day, max(p_import) w, ts FROM samples "
+                           "WHERE substr(ts,1,10)>=? GROUP BY day", (since,)).fetchall()
+    days_ = {}
+    for r in slow:
+        days_[r["day"]] = {"day": r["day"], "w": r["w"] or 0, "ts": r["ts"], "fast": False}
+    for d, r in fast.items():
+        if r["imp_w"] is not None and r["imp_w"] >= days_.get(d, {}).get("w", 0):
+            days_[d] = {"day": d, "w": r["imp_w"], "ts": r["imp_ts"], "fast": True}
+    rows = sorted(days_.values(), key=lambda r: r["day"])
+    top = sorted(rows, key=lambda r: -r["w"])[:5]
+    peak = top[0]["w"] if top else 0
+    cur = POWER_PRICES.get(POWER_KVA)
+    options = []
+    for kva, price in sorted(POWER_PRICES.items()):
+        limit = kva * 1000
+        options.append({"kva": kva, "limit_w": limit, "eur_day": price,
+                        "days_over": sum(1 for r in rows if r["w"] > limit),
+                        "margin_w": round(limit - peak),
+                        "eur_year_vs_current": round((price - cur) * 365) if cur else None,
+                        "current": kva == POWER_KVA})
+    # a menor opção com pelo menos 15% de folga sobre o maior pico medido
+    ok = [o for o in options if peak <= o["limit_w"] * 0.85]
+    return {"days": len(rows), "peak_w": round(peak), "top": top, "options": options,
+            "current_kva": POWER_KVA, "best_kva": ok[0]["kva"] if ok else None,
+            "fast_since": min(fast) if fast else None}
+
+
+def is_vazio(t, cycle):
+    """Horas de vazio da tarifa bi-horária (BTN). Diário: 22h–8h todos os dias.
+    Semanal: dias úteis 0h–7h; domingo todo o dia; sábado conforme a estação."""
+    h = t.hour + t.minute / 60
+    if cycle == "diario":
+        return h >= 22 or h < 8
+    wd = t.weekday()
+    if wd == 6:
+        return True
+    if wd == 5:
+        summer = 4 <= t.month <= 10  # hora legal de verão, aproximado
+        if summer:
+            return h < 9 or 14 <= h < 20 or h >= 22
+        return h < 9.5 or 13 <= h < 18.5 or h >= 22
+    return h < 7
+
+
+def api_tariff(days=30):
+    """Simples ou bi-horária, com a energia comprada à rede em cada minuto."""
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    with db() as con:
+        rows = con.execute("SELECT ts, p_import FROM samples WHERE substr(ts,1,10)>=? ORDER BY ts",
+                           (since,)).fetchall()
+    if len(rows) < 2:
+        return {"days": 0}
+    tot = 0.0
+    vaz = {"diario": 0.0, "semanal": 0.0}
+    by_hour = [0.0] * 24
+    prev = datetime.strptime(rows[0]["ts"], "%Y-%m-%d %H:%M:%S")
+    first = prev
+    for r in rows[1:]:
+        t = datetime.strptime(r["ts"], "%Y-%m-%d %H:%M:%S")
+        kwh = (r["p_import"] or 0) * min((t - prev).total_seconds(), 300) / 3600 / 1000
+        prev = t
+        tot += kwh
+        by_hour[t.hour] += kwh
+        for c in vaz:
+            if is_vazio(t, c):
+                vaz[c] += kwh
+    ndays = max((prev - first).total_seconds() / 86400, 1 / 24)
+    year = tot / ndays * 365
+    fv, v, bi_pot = BI_PRICES
+    simple_pot = POWER_PRICES.get(6.9, 0.578)
+    simple_year = year * SIMPLE_KWH + simple_pot * 365
+    cycles = []
+    for c, kv in vaz.items():
+        share = kv / tot if tot else 0
+        cost = year * ((1 - share) * fv + share * v) + bi_pot * 365
+        cycles.append({"cycle": c, "vazio_share": round(share * 100, 1),
+                       "eur_year": round(cost), "diff_eur_year": round(cost - simple_year)})
+    # % de vazio a partir da qual a bi-horária empata, contando com a potência
+    be = None
+    if year and fv != v:
+        be = ((year * fv + bi_pot * 365) - simple_year) / (year * (fv - v))
+    return {"days": round(ndays, 1), "import_kwh_day": round(tot / ndays, 2), "import_kwh_year": round(year),
+            "simple_eur_year": round(simple_year), "simple_kwh": SIMPLE_KWH, "simple_pot": simple_pot,
+            "bi_prices": BI_PRICES, "cycles": cycles,
+            "breakeven_share": round(be * 100, 1) if be is not None else None,
+            "by_hour": [round(x / ndays, 3) for x in by_hour]}
 
 
 def api_events(days=7):
@@ -414,6 +537,10 @@ class Handler(BaseHTTPRequestHandler):
                                                "export_price": EXPORT_PRICE, "install_date": INSTALL_DATE,
                                                "install_days": days, "kwp": KWP,
                                                "rent_month": RENT_MONTH, "fast": _fast}), "application/json")
+        if path == "/api/power":
+            return self._send(200, json.dumps(api_power(int(params.get("days", "30")))), "application/json")
+        if path == "/api/tariff":
+            return self._send(200, json.dumps(api_tariff(int(params.get("days", "30")))), "application/json")
         if path == "/api/events":
             n = max(1, min(int(params.get("days", "7")), 90))
             return self._send(200, json.dumps(api_events(n)), "application/json")
