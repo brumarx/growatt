@@ -4,15 +4,38 @@ Painel web simples para acompanhar um inversor **Growatt MIN 4200TL-XH**. Mostra
 
 O programa lê o inversor diretamente por **Modbus TCP**, através do dongle Wi-Fi, e **apenas lê**: nunca escreve nada no inversor. Não usa a cloud da Growatt e não precisa de dependências externas, só da biblioteca padrão do Python 3. Corre num Raspberry Pi como serviço `systemd` de utilizador.
 
+<p align="center">
+  <img src="docs/img/index.png" alt="Painel solar: potência atual, energia do dia, gráfico do dia e dos últimos 30 dias" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/img/index-dark.png" alt="Painel em modo escuro" width="64%">
+  &nbsp;
+  <img src="docs/img/mobile.png" alt="Painel no telemóvel" width="22%">
+</p>
+
 ## O que mostra
 
 - **Agora:** a potência dos painéis, o consumo da casa, quanto se compra à rede e quanto se envia para ela.
 - **Hoje:** a energia produzida, gasta, comprada (com o custo em €) e enviada. Inclui um gráfico de para onde foi a energia dos painéis e outro da potência ao longo do dia.
 - **Últimos 30 dias:** os totais de cada dia.
-- **Strings:** a tensão, a corrente e a potência de cada linha de painéis.
+- **Linhas de painéis (strings):** para cada linha, a tensão, a corrente e a potência atuais, os kWh de hoje, o pico do dia (W e hora) e os kWh desde a instalação, com a percentagem de cada uma.
 - **Desde a instalação:** os contadores totais do inversor.
 - **Inversor:** o estado, a temperatura, a tensão e a frequência da rede.
 - **Dica:** a janela de horas com mais excedente, calculada a partir das leituras reais dos últimos 7 dias. Serve para saber quando ligar as máquinas.
+- **Bateria:** uma simulação, minuto a minuto, de quanto teriam poupado baterias de 5 e 10 kWh, com o retorno em anos.
+- **Excedente:** quanto valeria a energia enviada à rede se fosse vendida.
+
+### Guia: bateria e venda à rede (`/guia`)
+
+A página `/guia` reúne:
+
+- a análise de **bateria** com as leituras reais, as baterias compatíveis com o MIN 4200TL-XH (Growatt APX e ARK XH) e os preços, com as fontes;
+- o passo a passo para **vender o excedente** em Portugal: registo da UPAC na DGEG, CPE de produção na E-Redes, atividade nas Finanças (CAE 35123), comparação de comercializadores e documentos para o contrato.
+
+<p align="center">
+  <img src="docs/img/guia.png" alt="Guia: análise de bateria e passos para vender o excedente" width="70%">
+</p>
 
 ## Como funciona
 
@@ -30,10 +53,13 @@ Inversor Growatt ──Modbus TCP :502──▶ solar.py ──▶ solar.db (SQL
 
 | Endpoint | Devolve |
 |---|---|
-| `GET /api/now` | A última leitura e o preço do kWh |
+| `GET /api/now` | A última leitura, os totais de hoje (incluindo por linha), os picos de cada linha e os preços do kWh |
 | `GET /api/today?day=AAAA-MM-DD` | A curva de potência do dia (painéis, casa, compra, envio) |
 | `GET /api/days?n=30` | Os totais diários de kWh dos últimos *n* dias (máximo 400) |
 | `GET /api/tip` | A melhor janela de horas para gastar o excedente |
+| `GET /api/battery?days=30` | A simulação de baterias de 5 e 10 kWh com as leituras reais |
+
+Os totais por dia calculam-se pela diferença dos contadores totais do inversor. Os contadores "hoje" do próprio inversor só voltam a zero quando ele acorda, por isso de madrugada ainda mostrariam o dia anterior.
 
 ## Instalação
 
@@ -171,6 +197,9 @@ Tudo se configura por variáveis de ambiente. Para as definir, acrescente linhas
 | `SOLAR_HTTP_PORT` | `8096` | A porta da página web |
 | `SOLAR_PRICE_KWH` | `0.168` | O preço do kWh comprado, em €, com IVA |
 | `SOLAR_PRICE_LABEL` | `EDP Digital 20%` | O nome da tarifa que aparece na página |
+| `SOLAR_EXPORT_PRICE` | `0.03` | O preço do kWh vendido à rede, em € |
+| `SOLAR_BATTERY_COST_5` | `2100` | O custo de uma bateria de 5 kWh já instalada, em € |
+| `SOLAR_BATTERY_COST_10` | `3500` | O custo de uma bateria de 10 kWh já instalada, em € |
 
 Exemplo:
 
@@ -185,7 +214,9 @@ Environment=SOLAR_PRICE_KWH=0.20
 | Ficheiro | Descrição |
 |---|---|
 | `solar.py` | O leitor Modbus, a gravação em SQLite e o servidor HTTP |
-| `index.html` | A página (HTML, CSS e Chart.js) |
+| `index.html` | O painel (HTML, CSS e Chart.js) |
+| `guia.html` | O guia: bateria e venda do excedente |
+| `docs/img/` | As capturas de ecrã do README |
 | `solar.service` | A unidade `systemd` de utilizador |
 | `solar.db` | O histórico de leituras. É criado automaticamente e **não é publicado** |
 

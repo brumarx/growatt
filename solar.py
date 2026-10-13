@@ -24,6 +24,18 @@ HTTP_PORT = int(os.environ.get("SOLAR_HTTP_PORT", "8096"))
 # Atenção: o desconto acaba em Out 2027 (passa a 0,1671 €/kWh s/IVA).
 PRICE_KWH = float(os.environ.get("SOLAR_PRICE_KWH", "0.168"))  # € por kWh comprado, com IVA
 PRICE_LABEL = os.environ.get("SOLAR_PRICE_LABEL", "EDP Digital 20%")
+# Venda do excedente: indexado ao OMIE menos a comissão do comercializador.
+# OMIE médio 2025 entre as 9h e as 18h ≈ 0,035 €/kWh, menos 25% ≈ 0,026 €/kWh.
+EXPORT_PRICE = float(os.environ.get("SOLAR_EXPORT_PRICE", "0.03"))  # € por kWh vendido
+# Baterias compatíveis com o MIN 4200TL-XH (ARK XH ou APX): custo estimado com instalação, em €.
+# Capacidade útil ≈ 90% da nominal; potência de carga/descarga limitada pelo inversor/BMS.
+BATTERIES = [
+    {"name": "5 kWh", "usable": 4.5, "max_w": 2500,
+     "cost": float(os.environ.get("SOLAR_BATTERY_COST_5", "2100"))},
+    {"name": "10 kWh", "usable": 9.0, "max_w": 4200,
+     "cost": float(os.environ.get("SOLAR_BATTERY_COST_10", "3500"))},
+]
+BATTERY_EFF = 0.95  # eficiência em cada sentido (≈ 90% ida e volta)
 BASE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE, "solar.db")
 
@@ -71,6 +83,9 @@ def sample():
         "e_export_today": u32(71), "e_export_total": u32(73),
         "e_load_today": u32(75), "e_load_total": u32(77),
         "temp": s16(93),
+        # energia DC de cada linha de painéis (strings)
+        "epv1_today": u32(55), "epv1_total": u32(57),
+        "epv2_today": u32(59), "epv2_total": u32(61),
     }
 
 
@@ -78,7 +93,13 @@ def sample():
 COLS = ["status", "ppv", "pv1_v", "pv1_a", "pv1_w", "pv2_v", "pv2_a", "pv2_w",
         "pac", "grid_v", "grid_hz", "p_import", "p_export", "p_load",
         "e_pv_today", "e_pv_total", "e_import_today", "e_import_total",
-        "e_export_today", "e_export_total", "e_load_today", "e_load_total", "temp"]
+        "e_export_today", "e_export_total", "e_load_today", "e_load_total", "temp",
+        "epv1_today", "epv1_total", "epv2_today", "epv2_total"]
+
+# Os contadores "hoje" do inversor só voltam a zero quando ele acorda de manhã,
+# por isso os totais por dia calculam-se pela diferença dos contadores totais.
+TOTALS = {"pv": "e_pv_total", "load": "e_load_total", "imp": "e_import_total",
+          "exp": "e_export_total", "pv1": "epv1_total", "pv2": "epv2_total"}
 
 
 def db():
@@ -91,6 +112,10 @@ def init_db():
     with db() as con:
         con.execute("CREATE TABLE IF NOT EXISTS samples (ts TEXT PRIMARY KEY, %s)"
                     % ", ".join("%s REAL" % c for c in COLS))
+        have = {r[1] for r in con.execute("PRAGMA table_info(samples)")}
+        for c in COLS:
+            if c not in have:
+                con.execute("ALTER TABLE samples ADD COLUMN %s REAL" % c)
         con.execute("CREATE INDEX IF NOT EXISTS idx_samples_day ON samples(substr(ts,1,10))")
 
 
@@ -147,13 +172,90 @@ def api_today(day):
 
 def api_days(n):
     since = (datetime.now() - timedelta(days=n - 1)).strftime("%Y-%m-%d")
-    # os contadores "hoje" do inversor sobem ao longo do dia: o máximo do dia é o total do dia
+    sel = ", ".join("max(%s) %s" % (c, k) for k, c in TOTALS.items())
     with db() as con:
-        rows = con.execute(
-            "SELECT substr(ts,1,10) day, max(e_pv_today) pv, max(e_load_today) load, "
-            "max(e_import_today) imp, max(e_export_today) exp FROM samples "
-            "WHERE substr(ts,1,10)>=? GROUP BY day ORDER BY day", (since,)).fetchall()
-    return [dict(r) for r in rows]
+        rows = [dict(r) for r in con.execute(
+            "SELECT substr(ts,1,10) day, %s FROM samples GROUP BY day ORDER BY day" % sel)]
+        firsts = {r["day"]: dict(r) for r in con.execute(
+            "SELECT substr(ts,1,10) day, %s FROM samples GROUP BY day"
+            % ", ".join("min(%s) %s" % (c, k) for k, c in TOTALS.items()))}
+    out, prev = [], None
+    for r in rows:
+        d = {"day": r["day"], "partial": []}
+        for k in TOTALS:
+            # ponto de partida: o fim do dia anterior; sem ele, o início do próprio dia (dia incompleto)
+            if prev and prev[k] is not None:
+                base = prev[k]
+            else:
+                base = firsts[r["day"]][k]
+                d["partial"].append(k)
+            d[k] = round(r[k] - base, 1) if r[k] is not None and base is not None else None
+        prev = r
+        if r["day"] >= since:
+            out.append(d)
+    return out
+
+
+def api_battery(days=30):
+    """Simula, com as leituras reais, quanto uma bateria teria poupado: guarda o que
+    iria para a rede e devolve-o quando a casa compraria à rede."""
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    with db() as con:
+        rows = con.execute("SELECT ts, p_import, p_export FROM samples "
+                           "WHERE substr(ts,1,10)>=? ORDER BY ts", (since,)).fetchall()
+    if len(rows) < 2:
+        return {"days": 0, "options": []}
+    first, last = (datetime.strptime(rows[i]["ts"], "%Y-%m-%d %H:%M:%S") for i in (0, -1))
+    ndays = max((last - first).total_seconds() / 86400, 1 / 24)
+    imp_kwh = exp_kwh = 0.0
+    sims = [{"soc": 0.0, "out": 0.0, "in": 0.0, **b} for b in BATTERIES]
+    prev_t = first
+    for r in rows[1:]:
+        t = datetime.strptime(r["ts"], "%Y-%m-%d %H:%M:%S")
+        dt = min((t - prev_t).total_seconds(), 300) / 3600  # horas; falhas longas não contam
+        prev_t = t
+        p_imp, p_exp = r["p_import"] or 0, r["p_export"] or 0
+        imp_kwh += p_imp * dt / 1000
+        exp_kwh += p_exp * dt / 1000
+        for b in sims:
+            if p_exp > 0:
+                take = min(min(p_exp, b["max_w"]) * dt / 1000, (b["usable"] - b["soc"]) / BATTERY_EFF)
+                b["soc"] += take * BATTERY_EFF
+                b["in"] += take
+            elif p_imp > 0:
+                give = min(min(p_imp, b["max_w"]) * dt / 1000, b["soc"] * BATTERY_EFF)
+                b["soc"] -= give / BATTERY_EFF
+                b["out"] += give
+    opts = []
+    for b in sims:
+        per_day = b["out"] / ndays
+        # poupa o kWh comprado, mas perde o que receberia se vendesse esse excedente
+        year_eur = (b["out"] * PRICE_KWH - b["in"] * EXPORT_PRICE) / ndays * 365
+        opts.append({"name": b["name"], "usable": b["usable"], "cost": b["cost"],
+                     "kwh_day": round(per_day, 2), "kwh_year": round(per_day * 365),
+                     "eur_year": round(year_eur), "cycles_year": round(b["out"] / b["usable"] / ndays * 365),
+                     "payback_years": round(b["cost"] / year_eur, 1) if year_eur > 0 else None})
+    return {"days": round(ndays, 1), "since": rows[0]["ts"][:10],
+            "import_kwh_day": round(imp_kwh / ndays, 2), "export_kwh_day": round(exp_kwh / ndays, 2),
+            "price": PRICE_KWH, "export_price": EXPORT_PRICE, "options": opts}
+
+
+def api_strings(day):
+    """Pico de potência de cada linha no dia (valor e hora)."""
+    out = {}
+    with db() as con:
+        for i in (1, 2):
+            r = con.execute("SELECT substr(ts,12,5) t, pv%d_w w FROM samples WHERE substr(ts,1,10)=? "
+                            "ORDER BY pv%d_w DESC LIMIT 1" % (i, i), (day,)).fetchone()
+            out["pv%d_peak_w" % i] = r["w"] if r else None
+            out["pv%d_peak_t" % i] = r["t"] if r else None
+    return out
+
+
+def day_totals(day):
+    """Energia de cada contador num dia, pela diferença dos totais."""
+    rows = api_days(max(1, (datetime.now() - datetime.strptime(day, "%Y-%m-%d")).days + 1))
+    return next((r for r in rows if r["day"] == day), None)
 
 
 def api_tip(days=7):
@@ -199,12 +301,26 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path, _, query = self.path.partition("?")
         params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
-        if path in ("/", "/index.html"):
-            with open(os.path.join(BASE, "index.html"), "rb") as f:
+        pages = {"/": "index.html", "/index.html": "index.html", "/guia": "guia.html", "/guia.html": "guia.html"}
+        if path in pages:
+            with open(os.path.join(BASE, pages[path]), "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
         if path == "/api/now":
             with _lock:
-                return self._send(200, json.dumps({**_last, "price": PRICE_KWH, "price_label": PRICE_LABEL}), "application/json")
+                now = dict(_last)
+            t = day_totals(datetime.now().strftime("%Y-%m-%d"))
+            if t:  # corrige os "hoje" do inversor, que de madrugada ainda mostram ontem
+                for k, c in (("pv", "e_pv_today"), ("load", "e_load_today"),
+                             ("imp", "e_import_today"), ("exp", "e_export_today"),
+                             ("pv1", "epv1_today"), ("pv2", "epv2_today")):
+                    if t[k] is not None and k not in t["partial"]:
+                        now[c] = t[k]
+            now.update(api_strings(datetime.now().strftime("%Y-%m-%d")))
+            return self._send(200, json.dumps({**now, "price": PRICE_KWH, "price_label": PRICE_LABEL,
+                                               "export_price": EXPORT_PRICE}), "application/json")
+        if path == "/api/battery":
+            n = max(1, min(int(params.get("days", "30")), 400))
+            return self._send(200, json.dumps(api_battery(n)), "application/json")
         if path == "/api/tip":
             return self._send(200, json.dumps(api_tip()), "application/json")
         if path == "/api/today":

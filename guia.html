@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solar — Guia</title>
+<style>
+:root{
+  --bg:#f4f5f7; --card:#ffffff; --ink:#1c2230; --muted:#6b7385; --line:#e3e6ec;
+  --sun:#e8a317; --home:#3b6fd8; --buy:#d9534f; --sell:#2e9d6a;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#11141a; --card:#1a1f28; --ink:#e7eaf0; --muted:#8c94a6; --line:#2a313d;
+         --sun:#f2b632; --home:#6b95ec; --buy:#ec6f6b; --sell:#43c08a; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+h1{font-size:22px;margin:0}
+h2{font-size:19px;margin:28px 0 10px}
+h3{font-size:15px;margin:16px 0 6px}
+a{color:var(--home)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:10px 0}
+.sub{font-size:13px;color:var(--muted)}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media (max-width:720px){.facts{grid-template-columns:1fr 1fr}}
+.fact .n{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.fact .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:14px}
+th{font-size:12px;font-weight:600;color:var(--muted);text-align:left;padding:6px;border-bottom:1px solid var(--line)}
+td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.scroll{overflow-x:auto}
+ol.steps{padding-left:0;list-style:none;counter-reset:s;margin:0}
+ol.steps > li{counter-increment:s;position:relative;padding:12px 14px 12px 52px;background:var(--card);
+  border:1px solid var(--line);border-radius:12px;margin:10px 0}
+ol.steps > li::before{content:counter(s);position:absolute;left:14px;top:12px;width:26px;height:26px;border-radius:50%;
+  background:var(--sell);color:#fff;font-weight:700;text-align:center;line-height:26px;font-size:14px}
+ol.steps b.t{display:block;margin-bottom:2px}
+ul{margin:6px 0;padding-left:20px}
+.verdict{border-left:4px solid var(--sun)}
+.box-ok{border-left:4px solid var(--sell)}
+.num{font-variant-numeric:tabular-nums;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>☀️ Solar — Guia</h1>
+    <a href="/">← Painel</a>
+  </header>
+  <div class="sub">Inversor Growatt MIN 4200TL-XH (monofásico, preparado para bateria). Os números com fundo de dados vêm das leituras do inversor; os preços vêm das fontes indicadas e foram recolhidos em outubro de 2026.</div>
+
+  <h2>Os números da instalação</h2>
+  <div class="facts">
+    <div class="card fact"><div class="l">Produzido</div><div class="n" id="f_pv">–</div></div>
+    <div class="card fact"><div class="l">Enviado à rede</div><div class="n" id="f_exp">–</div></div>
+    <div class="card fact"><div class="l">Comprado à rede</div><div class="n" id="f_imp">–</div></div>
+    <div class="card fact"><div class="l">Usado em casa</div><div class="n" id="f_self">–</div></div>
+  </div>
+  <div class="sub">Contadores do inversor desde a instalação.</div>
+
+  <!-- ================================================================ BATERIA -->
+  <h2 id="bateria">🔋 Bateria</h2>
+
+  <div class="card verdict">
+    <b>Conclusão:</b> <span id="v_text">a calcular…</span>
+  </div>
+
+  <h3>Simulação com as leituras reais</h3>
+  <div class="card">
+    <div class="sub" id="b_note">–</div>
+    <div class="scroll"><table>
+      <thead><tr><th>Bateria</th><th class="r">Útil</th><th class="r">Devolvida à casa</th><th class="r">Ciclos/ano</th><th class="r">Poupança/ano</th><th class="r">Custo instalada</th><th class="r">Retorno</th></tr></thead>
+      <tbody id="b_rows"></tbody>
+    </table></div>
+    <div class="sub" style="margin-top:8px">A simulação carrega a bateria com o que iria para a rede e descarrega-a quando a casa compraria. Considera 90% de eficiência ida e volta, o limite de potência e a perda da venda desse excedente (a <span id="b_xp">–</span> €/kWh). Garantia típica das baterias: 10 anos.</div>
+  </div>
+
+  <h3>Baterias compatíveis com o MIN 4200TL-XH</h3>
+  <div class="card scroll">
+    <table>
+      <thead><tr><th>Sistema</th><th>Composição</th><th class="r">Capacidade</th><th class="r">Preço do equipamento (IVA incl.)</th></tr></thead>
+      <tbody>
+        <tr><td><b>Growatt APX</b></td><td>BMS APX 55027-P0 (MIN-XH) + módulos APX 5.0P-B1 + base</td><td class="r">5 a 30 kWh<br><span class="sub">módulos de 5 kWh</span></td>
+          <td class="r">5 kWh: <span class="num">1 360 – 2 000 €</span><br>10 kWh: <span class="num">2 625 – 3 600 €</span></td></tr>
+        <tr><td><b>Growatt ARK XH</b></td><td>BMS BDC 95045-A1 + mínimo 2 módulos ARK 2.5H-A1 + base</td><td class="r">5,1 a 25,6 kWh<br><span class="sub">módulos de 2,56 kWh</span></td>
+          <td class="r">5,1 kWh: <span class="num">1 420 – 2 700 €</span><br>10,2 kWh: <span class="num">3 700 – 5 100 €</span></td></tr>
+      </tbody>
+    </table>
+    <ul class="sub">
+      <li>Instalação (eletricista, cabos DC, configuração): conte com mais <b>300 – 600 €</b>. A simulação usa 2 100 € (5 kWh) e 3 500 € (10 kWh) no total.</li>
+      <li>Ligam diretamente ao inversor (DC). Não é preciso outro inversor. O contador de energia já está instalado: o inversor lê a compra e a venda à rede.</li>
+      <li>Na primeira ligação o inversor pode pedir atualização de firmware (erro 217).</li>
+      <li>Para ter luz durante um corte de rede é preciso uma <i>backup box</i> à parte.</li>
+    </ul>
+    <div class="sub">Preços: <a href="https://sunshop.pt/en/collections/bateria-growatt">sunshop.pt</a> ·
+      <a href="https://www.stralendgroen.nl/en/product/growatt-apx-battery-system-for-min-xh/">stralendgroen.nl (APX)</a> ·
+      <a href="https://www.stralendgroen.nl/en/product/growatt-ark-high-voltage-set-for-xh/">stralendgroen.nl (ARK)</a> ·
+      <a href="https://www.offgridtec.com/en/growatt-apx-5.0p-b1-high-voltage-battery-5kwh-lifepo4.html">offgridtec.com</a> ·
+      <a href="https://www.todoensolar.com/Growatt-ARK-25H-A1-HV-Lithium-Battery-Module">todoensolar.com</a></div>
+  </div>
+
+  <h3>Uma ou duas baterias?</h3>
+  <div class="card">
+    <ul>
+      <li>A bateria só poupa a energia que a casa <b>compra à noite</b> e só a consegue encher com o que <b>sobra de dia</b>. O limite é o menor dos dois: <span id="u_lim">–</span>.</li>
+      <li>Uma bateria maior que a compra noturna fica com carga por usar. A 2.ª bateria só trabalha nos dias em que a noite gasta mais do que a 1.ª guarda. Compare na tabela a energia devolvida por cada kWh de bateria.</li>
+      <li>No inverno sobra menos de dia, por isso a bateria enche menos. Os valores anuais acima assumem que todos os dias são como os dias medidos.</li>
+    </ul>
+  </div>
+
+  <!-- ================================================================ VENDA -->
+  <h2 id="venda">⚡ Vender o excedente à rede</h2>
+
+  <div class="card box-ok">
+    <b>Quanto rende:</b> <span id="s_text">a calcular…</span>
+  </div>
+
+  <ol class="steps">
+    <li><b class="t">Confirmar o registo da UPAC na DGEG</b>
+      Para vender, a instalação tem de estar registada como UPAC (Unidade de Produção para Autoconsumo) <b>com injeção na rede</b>. Entre 0,8 kW e 30 kW é uma <i>comunicação prévia</i> à DGEG; o registo é feito por um técnico ou pelo instalador.
+      <ul>
+        <li>Peça ao instalador o <b>número de registo da UPAC</b> e o comprovativo.</li>
+        <li>Se não houver registo, ou se estiver registado “sem injeção”, o instalador tem de o fazer ou alterar.</li>
+      </ul>
+    </li>
+    <li><b class="t">Contador inteligente e CPE de produção (E-Redes)</b>
+      Depois do registo, a E-Redes atribui um <b>CPE de produção</b> e garante um contador bidirecional (troca sem custo). Guarde o código CPE de produção: é pedido no contrato de venda.
+    </li>
+    <li><b class="t">Abrir atividade nas Finanças</b>
+      No Portal das Finanças: <i>Cidadãos → Serviços → Atividade → Declaração de início</i> (ou alteração, se já tiver atividade).
+      <ul>
+        <li>CAE <b>35123</b> (produção de eletricidade de origem solar, para declarações a partir de 1/1/2025).</li>
+        <li>Rendimento do excedente de UPAC: <b>isento de IRS até 1 000 €/ano</b>.</li>
+        <li>IVA: confirme com as Finanças ou um contabilista se fica isento (regime do art. 53.º).</li>
+      </ul>
+    </li>
+    <li><b class="t">Escolher a quem vender e comparar preços</b>
+      Não tem de ser o mesmo comercializador que lhe vende a luz.
+      <div class="scroll" style="margin-top:6px"><table>
+        <thead><tr><th>Comprador</th><th>Preço pago</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://www.edp.pt/particulares/servicos/energia-solar/venda-excedentes/">EDP Comercial</a> (atual fornecedor)</td><td>OMIE horário − 25%. OMIE médio 9h–18h em 2025: 0,035 €/kWh → ≈ <b>0,026 €/kWh</b></td></tr>
+          <tr><td><a href="https://www.iberdrola.pt/casa/energia-solar/compra-e-venda-excedentes-autoconsumo">Iberdrola</a></td><td>OMIE horário − custo de gestão</td></tr>
+          <tr><td><a href="https://www.galp.com/pt/casa/blog/como-vender-excedente-de-energia-solar">Galp</a></td><td>Fixo (exemplo: 0,05 €/kWh) ou indexado ao OMIE</td></tr>
+          <tr><td><a href="https://www.repsol.pt/particulares/assessoramento/venda-de-excedente-autoconsumo/">Repsol</a></td><td>OMIE − comissão (20–25%)</td></tr>
+          <tr><td>SU Eletricidade (comercializador de último recurso)</td><td>Pedir proposta</td></tr>
+        </tbody>
+      </table></div>
+      <div class="sub">Peça o preço <b>por escrito</b>: fixo ou OMIE, e qual a percentagem de gestão.</div>
+    </li>
+    <li><b class="t">Assinar o contrato de venda</b>
+      Documentos normalmente pedidos:
+      <ul>
+        <li>Número de registo da UPAC (DGEG)</li>
+        <li>CPE de produção (E-Redes)</li>
+        <li>Comprovativo de atividade com o CAE 35123</li>
+        <li>Comprovativo de IBAN emitido pelo banco, com menos de 6 meses, em nome do titular</li>
+      </ul>
+    </li>
+    <li><b class="t">Receber</b>
+      O comercializador lê a energia injetada pelo contador da E-Redes e paga por transferência (normalmente mensal, com autofaturação). Compare o valor pago com o <b>“Enviado à rede”</b> do painel.
+    </li>
+  </ol>
+
+  <div class="card sub">
+    Regras: Decreto-Lei 15/2022, alterado pelo Decreto-Lei 130/2026 (limiar sem controlo prévio passa de 700 W para 800 W a 28/08/2026). Fontes:
+    <a href="https://www.portal-energia.com/novo-regime-excedente-solar-paineis/">portal-energia.com</a> ·
+    <a href="https://www.doutorfinancas.pt/energia/excedente-de-energia-posso-vender-o-que-sobra-a-rede/">doutorfinancas.pt</a> ·
+    <a href="https://sotysolar.pt/blog/vender-energia-solar-excedente">sotysolar.pt</a> ·
+    <a href="https://poupaenergia.pt/wp-content/uploads/2025/07/Guia_Explicativo_do_Autoconsumo.pdf">Guia do Autoconsumo (Poupa Energia)</a> ·
+    <a href="https://www.enat.pt/autoconsumo">ENAT</a>.
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = (v, d=0) => v == null || isNaN(v) ? '–' : Number(v).toLocaleString('pt-PT',{minimumFractionDigits:d,maximumFractionDigits:d});
+const eur = (v, d=0) => fmt(v, d) + ' €';
+async function j(u){ const r = await fetch(u, {cache:'no-store'}); return r.json(); }
+
+(async () => {
+  const [n, b] = await Promise.all([j('/api/now'), j('/api/battery?days=90')]);
+  $('f_pv').textContent = fmt(n.e_pv_total) + ' kWh';
+  $('f_exp').textContent = fmt(n.e_export_total) + ' kWh';
+  $('f_imp').textContent = fmt(n.e_import_total) + ' kWh';
+  $('f_self').textContent = n.e_pv_total ? fmt((1 - n.e_export_total / n.e_pv_total) * 100) + '%' : '–';
+
+  // venda: valor do que já foi enviado, a três preços de referência
+  const ex = n.e_export_total || 0;
+  $('s_text').innerHTML = `já foram enviados <b>${fmt(ex)} kWh</b> à rede sem pagamento. Vendidos, valeriam `
+    + `<b>${eur(ex * 0.026)}</b> a 0,026 €/kWh (EDP, OMIE − 25%), <b>${eur(ex * 0.035)}</b> a 0,035 €/kWh `
+    + `ou <b>${eur(ex * 0.05)}</b> a 0,05 €/kWh (preço fixo). Gastar esse kWh em casa vale ${fmt(n.price, 3)} €.`;
+
+  $('b_xp').textContent = fmt(b.export_price, 3);
+  if (!b.options.length){ $('v_text').textContent = 'ainda sem leituras.'; return; }
+  $('b_note').innerHTML = `Base: <b>${fmt(b.days,1)} dias</b> de leituras desde ${b.since.split('-').reverse().join('/')}. `
+    + `Média por dia: compra <b>${fmt(b.import_kwh_day,1)} kWh</b>, envia <b>${fmt(b.export_kwh_day,1)} kWh</b>.`;
+  $('b_rows').innerHTML = b.days < 1 ? '<tr><td colspan="7" class="sub">A simulação precisa de pelo menos 1 dia completo de leituras.</td></tr>' : b.options.map(o => `<tr><td>${o.name}</td><td class="r">${fmt(o.usable,1)} kWh</td>`
+    + `<td class="r">${fmt(o.kwh_day,1)} kWh/dia</td><td class="r">${fmt(o.cycles_year)}</td><td class="r">${eur(o.eur_year)}</td>`
+    + `<td class="r">${eur(o.cost)}</td><td class="r">${o.payback_years == null ? '–' : fmt(o.payback_years,1) + ' anos'}</td></tr>`).join('');
+  $('u_lim').innerHTML = `compra <b>${fmt(b.import_kwh_day,1)} kWh/dia</b> e sobra <b>${fmt(b.export_kwh_day,1)} kWh/dia</b> nos dias medidos`;
+
+  const [o1, o2] = b.options;
+  if (b.days < 7){
+    $('v_text').innerHTML = `só há <b>${fmt(b.days,1)} dias</b> de leituras; a conta fica fiável a partir de 7 dias e certa com um ano. `
+      + `Até lá vale a estimativa com o dia completo de 12/10: produção 12,3 kWh, compra 5,7 kWh, envio 7,2 kWh → `
+      + `uma bateria de 5 kWh devolveria ≈ 4,3 kWh/dia (≈ 0,60 €/dia); a de 10 kWh ≈ 5,4 kWh/dia (≈ 0,75 €/dia).`;
+    return;
+  }
+  const extra = o2.kwh_day - o1.kwh_day;
+  $('v_text').innerHTML = `uma bateria de <b>5 kWh</b> poupa <b>${eur(o1.eur_year)}/ano</b> e paga-se em <b>${o1.payback_years ?? '–'} anos</b>. `
+    + `A de <b>10 kWh</b> devolve só mais <b>${fmt(extra,1)} kWh/dia</b> (${eur(o2.eur_year - o1.eur_year)}/ano a mais por ${eur(o2.cost - o1.cost)} a mais) `
+    + `e paga-se em <b>${o2.payback_years ?? '–'} anos</b>.`;
+})();
+</script>
+</body>
+</html>
