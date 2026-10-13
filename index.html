@@ -202,7 +202,11 @@ async function loadNow(){
   $('dot').className = 'dot ' + (d.ok && age < 300 ? 'ok' : 'err');
   $('st').textContent = d.ok ? 'atualizado às ' + d.ts.slice(11,16)
     : 'última leitura às ' + d.ts.slice(11,16) + ' — ' + (d.error === 'timed out' ? 'o inversor não respondeu (Wi-Fi fraco ou desligado à noite)' : (d.error||'sem resposta'));
-  $('ppv').textContent = fmt(d.ppv); $('pload').textContent = fmt(d.p_load);
+  $('ppv').textContent = fmt(d.ppv);
+  // consumo da leitura rápida (5 s), se for recente
+  const f = d.fast || {};
+  const fresh = f.ts && (Date.now() - new Date(f.ts.replace(' ','T')).getTime()) < 20000;
+  $('pload').textContent = fmt(fresh ? f.load : d.p_load);
   $('pimp').textContent = fmt(d.p_import); $('pexp').textContent = fmt(d.p_export);
   $('epv').textContent = fmt(d.e_pv_today,1); $('eload').textContent = fmt(d.e_load_today,1);
   $('eimp').textContent = fmt(d.e_import_today,1); $('eexp').textContent = fmt(d.e_export_today,1);
@@ -333,7 +337,7 @@ $('next').onclick = () => shift(1);
 
 async function tick(){ try { await loadNow(); } catch(e){} }
 tick(); loadDay(); loadDays(); loadTip(); loadBattery(); loadEvents();
-setInterval(tick, 30000);
+setInterval(tick, 5000);
 setInterval(() => { if (day === localDay(new Date())) loadDay(); }, 60000);
 setInterval(loadDays, 600000);
 setInterval(loadTip, 1800000);
