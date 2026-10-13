@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solar — Casa</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#f4f5f7; --card:#ffffff; --ink:#1c2230; --muted:#6b7385; --line:#e3e6ec;
+  --sun:#e8a317; --home:#3b6fd8; --buy:#d9534f; --sell:#2e9d6a;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#11141a; --card:#1a1f28; --ink:#e7eaf0; --muted:#8c94a6; --line:#2a313d;
+         --sun:#f2b632; --home:#6b95ec; --buy:#ec6f6b; --sell:#43c08a; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+h1{font-size:22px;margin:0}
+.status{font-size:13px;color:var(--muted)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted)}
+.dot.ok{background:var(--sell)} .dot.err{background:var(--buy)}
+.grid{display:grid;gap:12px}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g2{grid-template-columns:1fr 1fr}
+@media (max-width:820px){.g4{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card h2{font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}
+.big{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.unit{font-size:15px;font-weight:500;color:var(--muted);margin-left:3px}
+.sub{font-size:13px;color:var(--muted);margin-top:4px}
+.sun .big{color:var(--sun)} .home .big{color:var(--home)}
+.buy .big{color:var(--buy)} .sell .big{color:var(--sell)}
+section{margin-top:18px}
+section > h3{font-size:16px;margin:0 0 10px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-variant-numeric:tabular-nums}
+.kv dt{color:var(--muted)} .kv dd{margin:0;text-align:right;font-weight:600}
+.chartbox{position:relative;height:280px}
+.tip{border-left:4px solid var(--sun);padding:10px 14px;background:var(--card);border-radius:8px;
+  border-top:1px solid var(--line);border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden;display:flex;margin:8px 0 4px}
+.bar span{display:block;height:100%}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.warn{color:var(--buy);font-weight:600}
+.now-good{background:color-mix(in srgb,var(--sell) 15%,transparent);border-radius:8px;padding:8px 10px;font-weight:600}
+nav.days{display:flex;gap:6px;align-items:center}
+nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;
+  padding:4px 10px;font:inherit;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>☀️ Solar — Casa</h1>
+    <div class="status"><span id="dot" class="dot"></span><span id="st">a ligar ao inversor…</span></div>
+  </header>
+
+  <div class="grid g4">
+    <div class="card sun"><h2>Painéis</h2><div class="big"><span id="ppv">–</span><span class="unit">W</span></div><div class="sub">a produzir agora</div></div>
+    <div class="card home"><h2>Casa</h2><div class="big"><span id="pload">–</span><span class="unit">W</span></div><div class="sub">a gastar agora</div></div>
+    <div class="card buy"><h2>Compra à rede</h2><div class="big"><span id="pimp">–</span><span class="unit">W</span></div><div class="sub">a tirar da rede</div></div>
+    <div class="card sell"><h2>Envia à rede</h2><div class="big"><span id="pexp">–</span><span class="unit">W</span></div><div class="sub">excedente a sair</div></div>
+  </div>
+
+  <section>
+    <h3>Hoje</h3>
+    <div class="grid g4">
+      <div class="card sun"><h2>Produzido</h2><div class="big"><span id="epv">–</span><span class="unit">kWh</span></div></div>
+      <div class="card home"><h2>Gasto em casa</h2><div class="big"><span id="eload">–</span><span class="unit">kWh</span></div></div>
+      <div class="card buy"><h2>Comprado</h2><div class="big"><span id="eimp">–</span><span class="unit">kWh</span></div><div class="sub" id="eimp_eur"></div></div>
+      <div class="card sell"><h2>Enviado à rede</h2><div class="big"><span id="eexp">–</span><span class="unit">kWh</span></div><div class="sub">não é pago</div></div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h2>Para onde foi a energia dos painéis hoje</h2>
+      <div class="bar"><span id="b_self" style="background:var(--home)"></span><span id="b_exp" style="background:var(--sell)"></span></div>
+      <div class="legend"><span><i style="background:var(--home)"></i>usada em casa <b id="l_self">–</b></span><span><i style="background:var(--sell)"></i>enviada à rede <b id="l_exp">–</b></span><span>poupança de hoje ≈ <b id="l_save">–</b></span></div>
+    </div>
+  </section>
+
+  <section>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <h3 style="margin:0">Potência ao longo do dia</h3>
+      <nav class="days"><button id="prev">◀</button><span id="daylbl"></span><button id="next">▶</button></nav>
+    </div>
+    <div class="card"><div class="chartbox"><canvas id="cDay"></canvas></div></div>
+  </section>
+
+  <section>
+    <h3>Últimos 30 dias</h3>
+    <div class="card"><div class="chartbox"><canvas id="cDays"></canvas></div></div>
+  </section>
+
+  <section class="grid g2">
+    <div class="card">
+      <h2>Linhas de painéis (strings)</h2>
+      <dl class="kv">
+        <dt>Linha 1</dt><dd id="s1">–</dd>
+        <dt>Linha 2</dt><dd id="s2">–</dd>
+      </dl>
+      <div class="sub" id="snote"></div>
+    </div>
+    <div class="card">
+      <h2>Desde a instalação</h2>
+      <dl class="kv">
+        <dt>Produzido</dt><dd id="t_pv">–</dd>
+        <dt>Gasto em casa</dt><dd id="t_load">–</dd>
+        <dt>Comprado à rede</dt><dd id="t_imp">–</dd>
+        <dt>Enviado à rede</dt><dd id="t_exp">–</dd>
+        <dt>Autoconsumo</dt><dd id="t_self">–</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h2>Inversor</h2>
+      <dl class="kv">
+        <dt>Estado</dt><dd id="i_st">–</dd>
+        <dt>Temperatura</dt><dd id="i_t">–</dd>
+        <dt>Rede</dt><dd id="i_g">–</dd>
+        <dt>Última leitura</dt><dd id="i_ts">–</dd>
+      </dl>
+    </div>
+    <div class="tip" id="tip">
+      <div id="tip_now" style="display:none;margin-bottom:8px"></div>
+      <div><b>Melhor altura para gastar:</b> <span id="tip_win">–</span></div>
+      <div class="sub" id="tip_win_note"></div>
+      <div style="margin-top:8px" id="tip_save"></div>
+      <div class="sub" style="margin-top:6px">Cada kWh que gastas com sol, em vez de o comprar à noite, poupa <b id="tip_eur">–</b> (<span id="tip_lbl"></span>, com IVA).</div>
+    </div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt = (v, d=0) => v == null || isNaN(v) ? '–' : Number(v).toLocaleString('pt-PT',{minimumFractionDigits:d,maximumFractionDigits:d});
+const eur = v => fmt(v,2) + ' €';
+const STATUS = {0:'à espera', 1:'normal ✅', 3:'falha ⚠️'};
+let price = 0.288;
+const localDay = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+let day = localDay(new Date());
+let chartDay, chartDays;
+
+async function j(u){ const r = await fetch(u, {cache:'no-store'}); return r.json(); }
+
+async function loadNow(){
+  const d = await j('/api/now');
+  price = d.price || price;
+  $('tip_eur').textContent = '≈ ' + eur(price);
+  $('tip_lbl').textContent = d.price_label || '';
+  if (!d.ts){ $('st').textContent = d.error || 'sem dados'; $('dot').className = 'dot err'; return; }
+  const age = (Date.now() - new Date(d.ts.replace(' ','T')).getTime())/1000;
+  $('dot').className = 'dot ' + (d.ok && age < 300 ? 'ok' : 'err');
+  $('st').textContent = d.ok ? 'atualizado às ' + d.ts.slice(11,16)
+    : 'última leitura às ' + d.ts.slice(11,16) + ' — ' + (d.error === 'timed out' ? 'o inversor não respondeu (Wi-Fi fraco ou desligado à noite)' : (d.error||'sem resposta'));
+  $('ppv').textContent = fmt(d.ppv); $('pload').textContent = fmt(d.p_load);
+  $('pimp').textContent = fmt(d.p_import); $('pexp').textContent = fmt(d.p_export);
+  $('epv').textContent = fmt(d.e_pv_today,1); $('eload').textContent = fmt(d.e_load_today,1);
+  $('eimp').textContent = fmt(d.e_import_today,1); $('eexp').textContent = fmt(d.e_export_today,1);
+  $('eimp_eur').textContent = '≈ ' + eur(d.e_import_today * price);
+  const self = Math.max(0, d.e_pv_today - d.e_export_today);
+  const tot = d.e_pv_today || 0;
+  const ps = tot ? self/tot*100 : 0;
+  $('b_self').style.width = ps + '%'; $('b_exp').style.width = (tot ? 100-ps : 0) + '%';
+  $('l_self').textContent = fmt(self,1) + ' kWh (' + fmt(ps) + '%)';
+  $('l_exp').textContent = fmt(d.e_export_today,1) + ' kWh (' + fmt(tot ? 100-ps : 0) + '%)';
+  $('l_save').textContent = eur(self * price);
+  const half = d.e_export_today / 2;
+  $('tip_save').innerHTML = d.e_export_today > 0.5
+    ? `Hoje já enviaste <b>${fmt(d.e_export_today,1)} kWh</b> para a rede sem receber nada. Se metade disso tivesse sido gasto em casa em vez de comprado à noite, poupavas <b>≈ ${eur(half*price)}</b> hoje (≈ ${eur(half*price*30)}/mês).`
+    : 'Hoje ainda não houve excedente significativo.';
+  const tn = $('tip_now');
+  if (d.ok && d.p_export >= 1500){
+    tn.style.display=''; tn.className='now-good';
+    tn.textContent = `✅ Agora é boa altura: estão a sair ${fmt(d.p_export)} W para a rede. Liga a máquina da roupa ou da loiça.`;
+  } else if (d.ok && d.p_export >= 600){
+    tn.style.display=''; tn.className='now-good';
+    tn.textContent = `🙂 Há ${fmt(d.p_export)} W a sobrar — dá para aparelhos pequenos (aspirador, carregar baterias).`;
+  } else { tn.style.display='none'; }
+  $('s1').textContent = `${fmt(d.pv1_v)} V · ${fmt(d.pv1_a,1)} A · ${fmt(d.pv1_w)} W`;
+  $('s2').textContent = `${fmt(d.pv2_v)} V · ${fmt(d.pv2_a,1)} A · ${fmt(d.pv2_w)} W`;
+  const big = Math.max(d.pv1_w, d.pv2_w), small = Math.min(d.pv1_w, d.pv2_w);
+  $('snote').innerHTML = big > 400 && small < big * 0.3
+    ? '<span class="warn">Uma linha produz muito menos que a outra.</span> Normal se estiverem viradas para lados diferentes; se não, pode ser sombra ou avaria.'
+    : 'As duas linhas estão equilibradas.';
+  $('t_pv').textContent = fmt(d.e_pv_total) + ' kWh';
+  $('t_load').textContent = fmt(d.e_load_total) + ' kWh';
+  $('t_imp').textContent = fmt(d.e_import_total) + ' kWh';
+  $('t_exp').textContent = fmt(d.e_export_total) + ' kWh';
+  $('t_self').textContent = d.e_pv_total ? fmt((1 - d.e_export_total/d.e_pv_total)*100) + '% usado em casa' : '–';
+  $('i_st').textContent = STATUS[d.status] ?? ('código ' + d.status);
+  $('i_t').textContent = fmt(d.temp,1) + ' °C';
+  $('i_g').textContent = `${fmt(d.grid_v,1)} V · ${fmt(d.grid_hz,2)} Hz`;
+  $('i_ts').textContent = d.ts;
+}
+
+async function loadTip(){
+  const t = await j('/api/tip');
+  const h = n => String(n).padStart(2,'0') + 'h';
+  $('tip_win').textContent = `entre as ${h(t.start)} e as ${h(t.end)}`;
+  $('tip_win_note').textContent = t.learned
+    ? `Calculado com as tuas leituras dos últimos ${t.days} dias (excedente médio ≈ ${fmt(t.avg_export_w)} W nessas horas).`
+    : 'Valor aproximado — ainda a aprender com as tuas leituras (fica certo após 2 dias de dados).';
+}
+
+function baseOpts(){
+  const ink = css('--muted'), line = css('--line');
+  return {responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+    plugins:{legend:{labels:{color:ink,boxWidth:12}}},
+    scales:{x:{ticks:{color:ink,maxTicksLimit:12},grid:{color:line}},
+            y:{ticks:{color:ink},grid:{color:line},beginAtZero:true}}};
+}
+
+async function loadDay(){
+  $('daylbl').textContent = new Date(day+'T12:00').toLocaleDateString('pt-PT',{weekday:'short',day:'numeric',month:'short'});
+  const rows = await j('/api/today?day=' + day);
+  const ds = (label, key, color, fill) => ({label, data: rows.map(r => r[key]), borderColor: color,
+    backgroundColor: color + '33', fill, pointRadius:0, borderWidth:2, tension:.25});
+  const data = {labels: rows.map(r => r.t), datasets:[
+    ds('Painéis (W)','ppv',css('--sun'),true), ds('Casa (W)','p_load',css('--home'),false),
+    ds('Compra (W)','p_import',css('--buy'),false), ds('Envia (W)','p_export',css('--sell'),false)]};
+  if (chartDay){ chartDay.data = data; chartDay.update('none'); }
+  else chartDay = new Chart($('cDay'), {type:'line', data, options: baseOpts()});
+}
+
+async function loadDays(){
+  const rows = await j('/api/days?n=30');
+  const bar = (label, key, color) => ({label, data: rows.map(r => r[key]), backgroundColor: color, borderRadius:3});
+  const data = {labels: rows.map(r => r.day.slice(8,10) + '/' + r.day.slice(5,7)), datasets:[
+    bar('Produzido','pv',css('--sun')), bar('Gasto','load',css('--home')),
+    bar('Comprado','imp',css('--buy')), bar('Enviado','exp',css('--sell'))]};
+  const o = baseOpts(); o.scales.y.title = {display:true, text:'kWh', color: css('--muted')};
+  if (chartDays){ chartDays.data = data; chartDays.update('none'); }
+  else chartDays = new Chart($('cDays'), {type:'bar', data, options:o});
+}
+
+function shift(n){ const d = new Date(day+'T12:00'); d.setDate(d.getDate()+n); day = localDay(d); loadDay(); }
+$('prev').onclick = () => shift(-1);
+$('next').onclick = () => shift(1);
+
+async function tick(){ try { await loadNow(); } catch(e){} }
+tick(); loadDay(); loadDays(); loadTip();
+setInterval(tick, 30000);
+setInterval(() => { if (day === localDay(new Date())) loadDay(); }, 60000);
+setInterval(loadDays, 600000);
+setInterval(loadTip, 1800000);
+</script>
+</body>
+</html>

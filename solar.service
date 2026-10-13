@@ -1,0 +1,16 @@
+[Unit]
+Description=Solar — leitura do inversor Growatt (Modbus, só leitura) + página :8096
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/growatt
+ExecStart=/usr/bin/python3 -I %h/growatt/solar.py
+Restart=always
+RestartSec=30
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=10%
+MemoryMax=80M
+
+[Install]
+WantedBy=default.target

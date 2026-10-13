@@ -1,0 +1,7 @@
+# dados locais — não publicar
+solar.db
+solar.db-*
+NOTAS.md
+
+__pycache__/
+*.pyc
