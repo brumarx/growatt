@@ -4,6 +4,8 @@ After=network-online.target
 
 [Service]
 WorkingDirectory=%h/growatt
+# configuração local (não vai para o git): SOLAR_*=valor, uma por linha
+EnvironmentFile=-%h/growatt/local.env
 ExecStart=/usr/bin/python3 -I %h/growatt/solar.py
 Restart=always
 RestartSec=30

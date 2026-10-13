@@ -24,6 +24,11 @@ HTTP_PORT = int(os.environ.get("SOLAR_HTTP_PORT", "8096"))
 # Atenção: o desconto acaba em Out 2027 (passa a 0,1671 €/kWh s/IVA).
 PRICE_KWH = float(os.environ.get("SOLAR_PRICE_KWH", "0.168"))  # € por kWh comprado, com IVA
 PRICE_LABEL = os.environ.get("SOLAR_PRICE_LABEL", "EDP Digital 20%")
+# Instalação: 8 painéis JA Solar JAM66S30-500/MR (2 linhas de 4), contador Growatt SPM-E
+INSTALL_DATE = os.environ.get("SOLAR_INSTALL_DATE", "2026-04-06")
+KWP = float(os.environ.get("SOLAR_KWP", "4.0"))
+# Sistema alugado: renda mensal com IVA (0 = sistema próprio)
+RENT_MONTH = float(os.environ.get("SOLAR_RENT_MONTH", "0"))
 # Venda do excedente: indexado ao OMIE menos a comissão do comercializador.
 # OMIE médio 2025 entre as 9h e as 18h ≈ 0,035 €/kWh, menos 25% ≈ 0,026 €/kWh.
 EXPORT_PRICE = float(os.environ.get("SOLAR_EXPORT_PRICE", "0.03"))  # € por kWh vendido
@@ -316,8 +321,11 @@ class Handler(BaseHTTPRequestHandler):
                     if t[k] is not None and k not in t["partial"]:
                         now[c] = t[k]
             now.update(api_strings(datetime.now().strftime("%Y-%m-%d")))
+            days = (datetime.now() - datetime.strptime(INSTALL_DATE, "%Y-%m-%d")).days
             return self._send(200, json.dumps({**now, "price": PRICE_KWH, "price_label": PRICE_LABEL,
-                                               "export_price": EXPORT_PRICE}), "application/json")
+                                               "export_price": EXPORT_PRICE, "install_date": INSTALL_DATE,
+                                               "install_days": days, "kwp": KWP,
+                                               "rent_month": RENT_MONTH}), "application/json")
         if path == "/api/battery":
             n = max(1, min(int(params.get("days", "30")), 400))
             return self._send(200, json.dumps(api_battery(n)), "application/json")

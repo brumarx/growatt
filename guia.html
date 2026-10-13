@@ -61,7 +61,7 @@ ul{margin:6px 0;padding-left:20px}
     <div class="card fact"><div class="l">Comprado à rede</div><div class="n" id="f_imp">–</div></div>
     <div class="card fact"><div class="l">Usado em casa</div><div class="n" id="f_self">–</div></div>
   </div>
-  <div class="sub">Contadores do inversor desde a instalação.</div>
+  <div class="sub" id="f_note">Contadores do inversor desde a instalação.</div>
 
   <!-- ================================================================ BATERIA -->
   <h2 id="bateria">🔋 Bateria</h2>
@@ -93,9 +93,10 @@ ul{margin:6px 0;padding-left:20px}
     </table>
     <ul class="sub">
       <li>Instalação (eletricista, cabos DC, configuração): conte com mais <b>300 – 600 €</b>. A simulação usa 2 100 € (5 kWh) e 3 500 € (10 kWh) no total.</li>
-      <li>Ligam diretamente ao inversor (DC). Não é preciso outro inversor. O contador de energia já está instalado: o inversor lê a compra e a venda à rede.</li>
+      <li>Ligam diretamente ao inversor (DC). Não é preciso outro inversor. O contador que a bateria exige (Growatt SPM-E) já está instalado.</li>
       <li>Na primeira ligação o inversor pode pedir atualização de firmware (erro 217).</li>
       <li>Para ter luz durante um corte de rede é preciso uma <i>backup box</i> à parte.</li>
+      <li><b>Sistema alugado ou em subscrição:</b> o equipamento é do locador. Ligar uma bateria ao inversor é trabalho no sistema e precisa de autorização escrita dele.</li>
     </ul>
     <div class="sub">Preços: <a href="https://sunshop.pt/en/collections/bateria-growatt">sunshop.pt</a> ·
       <a href="https://www.stralendgroen.nl/en/product/growatt-apx-battery-system-for-min-xh/">stralendgroen.nl (APX)</a> ·
@@ -189,6 +190,10 @@ async function j(u){ const r = await fetch(u, {cache:'no-store'}); return r.json
   $('f_exp').textContent = fmt(n.e_export_total) + ' kWh';
   $('f_imp').textContent = fmt(n.e_import_total) + ' kWh';
   $('f_self').textContent = n.e_pv_total ? fmt((1 - n.e_export_total / n.e_pv_total) * 100) + '%' : '–';
+  const nd = n.install_days;
+  if (nd) $('f_note').innerHTML = `Contadores do inversor desde ${n.install_date.split('-').reverse().join('/')} (${nd} dias). Por dia: `
+    + `produz <b>${fmt(n.e_pv_total/nd,1)} kWh</b>, compra <b>${fmt(n.e_import_total/nd,1)} kWh</b>, envia <b>${fmt(n.e_export_total/nd,1)} kWh</b>. `
+    + `${fmt(n.kwp,1)} kWp: 8 × JA Solar JAM66S30-500/MR em 2 linhas de 4 · inversor Growatt MIN 4200TL-XH · contador Growatt SPM-E.`;
 
   // venda: valor do que já foi enviado, a três preços de referência
   const ex = n.e_export_total || 0;

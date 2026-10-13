@@ -1,6 +1,6 @@
 # ☀️ Growatt — painel solar local
 
-Painel web simples para acompanhar um inversor **Growatt MIN 4200TL-XH**. Mostra a produção, o consumo da casa e as trocas com a rede.
+Painel web simples para acompanhar um inversor **Growatt MIN 4200TL-XH** (instalação de 4,0 kWp: 8 painéis JA Solar JAM66S30-500/MR em 2 linhas de 4, contador Growatt SPM-E). Mostra a produção, o consumo da casa e as trocas com a rede.
 
 O programa lê o inversor diretamente por **Modbus TCP**, através do dongle Wi-Fi, e **apenas lê**: nunca escreve nada no inversor. Não usa a cloud da Growatt e não precisa de dependências externas, só da biblioteca padrão do Python 3. Corre num Raspberry Pi como serviço `systemd` de utilizador.
 
@@ -197,11 +197,16 @@ Tudo se configura por variáveis de ambiente. Para as definir, acrescente linhas
 | `SOLAR_HTTP_PORT` | `8096` | A porta da página web |
 | `SOLAR_PRICE_KWH` | `0.168` | O preço do kWh comprado, em €, com IVA |
 | `SOLAR_PRICE_LABEL` | `EDP Digital 20%` | O nome da tarifa que aparece na página |
+| `SOLAR_INSTALL_DATE` | `2026-04-06` | A data de instalação, para as médias por dia |
+| `SOLAR_KWP` | `4.0` | A potência dos painéis em kWp |
+| `SOLAR_RENT_MONTH` | `0` | A renda mensal, se o sistema for alugado. Mostra a poupança contra o aluguer |
 | `SOLAR_EXPORT_PRICE` | `0.03` | O preço do kWh vendido à rede, em € |
 | `SOLAR_BATTERY_COST_5` | `2100` | O custo de uma bateria de 5 kWh já instalada, em € |
 | `SOLAR_BATTERY_COST_10` | `3500` | O custo de uma bateria de 10 kWh já instalada, em € |
 
-Exemplo:
+Os valores que não devem ir para o git ficam em `~/growatt/local.env`, uma linha `SOLAR_...=valor` cada. O serviço lê esse ficheiro, e o `.gitignore` deixa-o fora do repositório.
+
+Exemplo no `solar.service`:
 
 ```ini
 [Service]

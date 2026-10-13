@@ -116,7 +116,7 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
       </table></div>
     </div>
     <div class="card">
-      <h2>Desde a instalação</h2>
+      <h2>Desde a instalação <span id="t_since" style="text-transform:none;letter-spacing:0"></span></h2>
       <dl class="kv">
         <dt>Produzido</dt><dd id="t_pv">–</dd>
         <dt>Gasto em casa</dt><dd id="t_load">–</dd>
@@ -124,6 +124,11 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
         <dt>Enviado à rede</dt><dd id="t_exp">–</dd>
         <dt>Autoconsumo</dt><dd id="t_self">–</dd>
         <dt>Excedente, se vendido</dt><dd id="t_sell">–</dd>
+        <dt>Poupança com os painéis</dt><dd id="t_save">–</dd>
+        <dt>Rendimento</dt><dd id="t_yield">–</dd>
+        <dt class="rent" hidden>Poupança por mês</dt><dd class="rent" hidden id="t_month">–</dd>
+        <dt class="rent" hidden>Aluguer por mês</dt><dd class="rent" hidden id="t_rent">–</dd>
+        <dt class="rent" hidden>Saldo por mês</dt><dd class="rent" hidden id="t_net">–</dd>
       </dl>
     </div>
     <div class="card">
@@ -215,10 +220,23 @@ async function loadNow(){
   const xp = d.export_price || 0;
   $('eexp_eur').textContent = 'não é pago · vendido ≈ ' + eur(d.e_export_today * xp);
   $('t_sell').textContent = '≈ ' + eur(d.e_export_total * xp) + ' (a ' + fmt(xp,3) + ' €/kWh)';
-  $('t_pv').textContent = fmt(d.e_pv_total) + ' kWh';
-  $('t_load').textContent = fmt(d.e_load_total) + ' kWh';
-  $('t_imp').textContent = fmt(d.e_import_total) + ' kWh';
-  $('t_exp').textContent = fmt(d.e_export_total) + ' kWh';
+  const nd = d.install_days || 0;
+  const totDay = (v) => fmt(v) + ' kWh' + (nd ? ' · ' + fmt(v / nd, 1) + '/dia' : '');
+  $('t_since').textContent = d.install_date ? '· ' + d.install_date.split('-').reverse().join('/') + ' · ' + nd + ' dias' : '';
+  $('t_pv').textContent = totDay(d.e_pv_total);
+  $('t_load').textContent = totDay(d.e_load_total);
+  $('t_imp').textContent = totDay(d.e_import_total);
+  $('t_exp').textContent = totDay(d.e_export_total);
+  $('t_save').textContent = '≈ ' + eur((d.e_pv_total - d.e_export_total) * price);
+  if (d.rent_month && nd){
+    const m = (d.e_pv_total - d.e_export_total) * price / nd * 365 / 12;
+    document.querySelectorAll('.rent').forEach(e => e.hidden = false);
+    $('t_month').textContent = '≈ ' + eur(m);
+    $('t_rent').textContent = eur(d.rent_month);
+    $('t_net').textContent = (m >= d.rent_month ? '+' : '') + eur(m - d.rent_month);
+    $('t_net').style.color = m >= d.rent_month ? 'var(--sell)' : 'var(--buy)';
+  }
+  $('t_yield').textContent = d.kwp ? fmt(d.e_pv_total / d.kwp) + ' kWh/kWp (' + fmt(d.kwp,1) + ' kWp)' : '–';
   $('t_self').textContent = d.e_pv_total ? fmt((1 - d.e_export_total/d.e_pv_total)*100) + '% usado em casa' : '–';
   $('i_st').textContent = STATUS[d.status] ?? ('código ' + d.status);
   $('i_t').textContent = fmt(d.temp,1) + ' °C';
