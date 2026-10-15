@@ -69,6 +69,7 @@ ul{margin:6px 0;padding-left:20px}
   <a href="/#bateria">🔋 Bateria</a>
   <div class="grp">Guia</div>
   <a href="/guia#bateria">🔋 Baterias e preços</a>
+  <a href="/guia#tomadas">🔌 Tomadas para medir</a>
   <a href="/guia#venda">⚡ Vender o excedente</a>
 </nav>
 <div class="wrap">
@@ -160,6 +161,41 @@ ul{margin:6px 0;padding-left:20px}
       <li>Uma bateria maior que a compra noturna fica com carga por usar. A 2.ª bateria só trabalha nos dias em que a noite gasta mais do que a 1.ª guarda. Compare na tabela a energia devolvida por cada kWh de bateria.</li>
       <li>No inverno sobra menos de dia, por isso a bateria enche menos. Os valores anuais acima assumem que todos os dias são como os dias medidos.</li>
     </ul>
+  </div>
+
+  <!-- ================================================================ TOMADAS -->
+  <h2 id="tomadas">🔌 Tomadas para medir cada aparelho</h2>
+  <div class="card">
+    Uma tomada inteligente com medição fica entre a parede e o aparelho e mede os watts e os kWh. O painel lê as que respondem <b>pela rede de casa, sem cloud</b>: basta escrever o IP no aparelho (separador <a href="/#aparelhos">Aparelhos</a>) e carregar em <b>Testar</b>.
+  </div>
+  <div class="card scroll">
+    <table>
+      <thead><tr><th>Tomada</th><th>Origem</th><th>Firmware / app</th><th>O painel lê?</th><th class="r">Preço visto</th></tr></thead>
+      <tbody>
+        <tr><td><b>Shelly Plug S Gen3</b><br><span class="sub">até 2 500 W</span></td><td>Bulgária</td><td>Shelly (RPC local)</td><td>✅ Sim</td><td class="r"><span class="num">17 – 24 €</span></td></tr>
+        <tr><td><b>Shelly Gen1 / Plus (Gen2)</b> com medição</td><td>Bulgária</td><td>Shelly</td><td>✅ Sim</td><td class="r">–</td></tr>
+        <tr><td><b>Nous A1T</b><br><span class="sub">16 A</span></td><td>marca europeia, fabricada na China</td><td>Tasmota já instalado</td><td>✅ Sim</td><td class="r"><span class="num">≈ 16 €</span><br><span class="sub">em promoção</span></td></tr>
+        <tr><td><b>Athom</b> (versão Tasmota)</td><td>China</td><td>Tasmota já instalado</td><td>✅ Sim</td><td class="r">–</td></tr>
+        <tr><td><b>Athom</b> (versão ESPHome)</td><td>China</td><td>ESPHome</td><td>❌ Ainda não</td><td class="r">–</td></tr>
+        <tr><td><b>Sonoff</b> (S31, S40, S60…)</td><td>China</td><td>eWeLink</td><td>❌ Não (só com Tasmota gravado na tomada)</td><td class="r">–</td></tr>
+        <tr><td><b>Tapo P110 / P115</b> (TP-Link)</td><td>China</td><td>Tapo, protocolo local cifrado</td><td>❌ Não</td><td class="r">–</td></tr>
+        <tr><td><b>Tuya / Smart Life</b> (BlitzWolf, Gosund, Antela e outras genéricas)</td><td>China</td><td>Tuya: a leitura local exige uma chave tirada de uma conta de programador</td><td>❌ Não</td><td class="r">–</td></tr>
+        <tr><td><b>Xiaomi Smart Plug</b></td><td>China</td><td>Mi Home</td><td>❌ Não</td><td class="r">–</td></tr>
+      </tbody>
+    </table>
+    <ul class="sub">
+      <li>Confirmar na chapa do aparelho que a potência não passa do limite da tomada.</li>
+      <li>Se a tomada tiver palavra-passe, desligar a autenticação na app ou na página dela; o painel avisa quando é isso.</li>
+      <li>Reservar o IP da tomada no router, para não mudar.</li>
+      <li>Aparelhos ligados direto ao quadro (placa de indução, forno encastrado, termoacumulador, ar condicionado) não usam tomada: precisam de um medidor de pinça no quadro, montado por um eletricista. O painel ainda não lê esses medidores.</li>
+    </ul>
+    <div class="sub">Fontes (out. 2026): <a href="https://www.shelly.com/products/shelly-plug-s-gen3">shelly.com</a> ·
+      <a href="https://www.galaxus.nl/en/s4/product/shelly-plug-s-gen3-smart-plugs-49472463">galaxus (Shelly)</a> ·
+      <a href="https://shelly-api-docs.shelly.cloud/gen2/ComponentsAndServices/Switch">API Shelly</a> ·
+      <a href="https://www.domo-blog.fr/promo-deal-french-days-prise-connectee-nous-tasmota">domo-blog.fr (Nous A1T)</a> ·
+      <a href="https://www.galaxus.de/en/s4/product/nous-a1t-smart-plugs-23979361">galaxus (Nous A1T)</a> ·
+      <a href="https://forums.homeseer.com/forum/homeseer-products-services/general-discussion-area/1326591-shelly-sonoff-and-tuya-power-monitoring-devices">fórum HomeSeer (Sonoff, Tuya)</a> ·
+      <a href="https://www.vigi.com/en/support/faq/3417/">TP-Link (Tapo)</a></div>
   </div>
 
   <!-- ================================================================ VENDA -->

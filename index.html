@@ -61,10 +61,11 @@ nav.tabs{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 14px;border-bottom:1px s
 nav.tabs a{padding:8px 12px;text-decoration:none;color:var(--muted);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px}
 nav.tabs a.on{color:var(--ink);border-bottom-color:var(--sun)}
 [data-tab][hidden]{display:none}
-form.app{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto auto;gap:8px;align-items:end;margin-top:10px}
+form.app{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;align-items:end;margin-top:10px}
 form.app label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
 form.app input[type=text],form.app input[type=number],select{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-width:0}
 form.app .chk{flex-direction:row;align-items:center;gap:6px;white-space:nowrap}
+form.app .wide{grid-column:span 2}
 @media (max-width:820px){form.app{grid-template-columns:1fr 1fr}}
 .btn{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:5px 10px;font:inherit;cursor:pointer}
 .btn.pri{background:var(--home);color:#fff;border-color:var(--home)}
@@ -96,6 +97,7 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
   <a href="/#bateria">🔋 Bateria</a>
   <div class="grp">Guia</div>
   <a href="/guia#bateria">🔋 Baterias e preços</a>
+  <a href="/guia#tomadas">🔌 Tomadas para medir</a>
   <a href="/guia#venda">⚡ Vender o excedente</a>
 </nav>
 <div class="wrap">
@@ -226,8 +228,8 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
     <h3>Aparelhos da casa</h3>
     <div class="card">
       <div class="sub" id="ap_note" style="margin:0 0 8px">–</div>
-      <div class="scroll"><table class="t">
-        <thead><tr><th>Aparelho</th><th>Potência</th><th>Uso</th><th>kWh/uso</th><th>Gasto/mês</th><th>Medido/mês</th><th>Da rede</th><th>Melhor hora</th><th>Com sol</th><th>Poupa/uso</th><th></th></tr></thead>
+      <div class="scroll"><table class="t" style="min-width:1000px">
+        <thead><tr><th>Aparelho</th><th>Potência</th><th>Uso</th><th>kWh/uso</th><th>Gasto/mês</th><th>Medido/mês</th><th>Da rede</th><th>Agora</th><th>Melhor hora</th><th>Com sol</th><th>Poupa/uso</th><th></th></tr></thead>
         <tbody id="ap_rows"></tbody>
       </table></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
@@ -237,11 +239,12 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
       </div>
       <form class="app" id="ap_form">
         <input type="hidden" name="id">
-        <label>Aparelho<input type="text" name="name" required maxlength="60" placeholder="Máquina da roupa"></label>
+        <label class="wide">Aparelho<input type="text" name="name" required maxlength="60" placeholder="Máquina da roupa"></label>
         <label>Potência (W)<input type="number" name="watts" required min="1" max="10000" step="1"></label>
         <label>Duração (min)<input type="number" name="minutes" required min="1" max="1440" step="1"></label>
         <label>Vezes/semana<input type="number" name="per_week" required min="0" max="100" step="0.5"></label>
         <label>kWh por uso<input type="number" name="kwh_use" min="0" step="0.01" placeholder="etiqueta"></label>
+        <label class="wide">IP da tomada <span style="display:flex;gap:4px"><input type="text" name="plug_ip" maxlength="64" placeholder="192.168.1.80" style="flex:1"> <button class="btn sm" type="button" id="plug_test">Testar</button></span></label>
         <label class="chk"><input type="checkbox" name="flexible" checked> muda de hora</label>
         <span><button class="btn pri" type="submit">Guardar</button> <button class="btn" type="reset">Limpar</button></span>
       </form>
@@ -250,6 +253,7 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
         <ul>
           <li><b>Potência (W):</b> na chapa de características do aparelho (atrás ou na porta), ou no manual.</li>
           <li><b>kWh por uso:</b> na etiqueta energética. Máquinas de lavar roupa e loiça: “kWh/100 ciclos” ÷ 100. Frigorífico: “kWh/ano” ÷ 365, com 1440 min e 7 vezes por semana. Vazio = potência × duração.</li>
+          <li><b>Tomada com medição (o mais exato):</b> Shelly (Plug S, Plus Plug S, Gen1/Gen2/Gen3) ou qualquer tomada com Tasmota (Nous A1T, Athom). Escreva o IP dela (vê-se na app ou no router) e carregue em Testar. O painel lê-a a cada 5 s pela rede de casa, sem cloud, e regista cada uso, o gasto por dia e a parte comprada à rede. <a href="/guia#tomadas">Que tomada comprar →</a></li>
           <li><b>Medir com o contador:</b> usa a leitura de 5 s do consumo da casa. Mede só o aparelho que for ligado durante a medição; os outros devem ficar como estão.</li>
           <li><b>Valores típicos</b> (lista acima): <a href="https://www.repsol.pt/particulares/assessoramento/eletrodomesticos-que-consomem-mais-energia/">Repsol</a> (kWh por ciclo, modo eco) e <a href="https://www.deco.proteste.pt/casa-energia/eletricidade-gas/noticias/quais-eletrodomesticos-gastam-mais-energia">DECO Proteste</a> (kWh/ano). A potência de pico vem da chapa de modelos comuns; confirme no seu aparelho.</li>
         </ul>
@@ -447,6 +451,33 @@ async function loadEvents(){
     : none(7, 'Ainda sem eventos registados.');
 }
 
+// tomada: potência agora, uso em curso, ou o erro
+function plugCell(p){
+  if (!p || (p.ok == null)) return '<span class="sub">a ligar…</span>';
+  if (!p.ok) return `<span class="warn" title="${esc(p.error || '')}">sem leitura</span>`;
+  let t = `🔌 <b>${fmt(p.w)} W</b>`;
+  if (p.running && p.run) t += `<br><span class="sub">a trabalhar desde ${p.run.start.slice(11,16)} · ${fmt(p.run.wh/1000,2)} kWh${p.run.grid_pct != null ? ' · ' + p.run.grid_pct + '% rede' : ''}</span>`;
+  else if (p.grid_pct != null && p.w >= 10) t += `<br><span class="sub">${p.grid_pct}% da rede</span>`;
+  if (p.today_wh != null) t += `<br><span class="sub">hoje ${fmt(p.today_wh/1000,2)} kWh</span>`;
+  return t;
+}
+async function loadPlugs(){
+  if (!document.querySelector('[id^="plug_"]') || location.hash !== '#aparelhos') return;
+  const live = await j('/api/plugs');
+  for (const p of window._apps || []) if (p.plug_ip && live[p.id] && $('plug_' + p.id))
+    $('plug_' + p.id).innerHTML = plugCell({...p.plug, ...live[p.id]});
+}
+$('plug_test').onclick = async () => {
+  const ip = $('ap_form').elements.plug_ip.value.trim(), st = $('ms_st');
+  if (!ip){ st.textContent = 'Escreva o IP da tomada.'; return; }
+  st.textContent = 'A ler a tomada…';
+  try {
+    const r = await post('/api/plug/test', {ip});
+    st.textContent = r.ok ? `Tomada lida: ${fmt(r.w,1)} W agora, ${fmt(r.total_kwh,2)} kWh no contador dela.` : 'Não consegui ler: ' + r.error;
+    if (r.ok && r.w >= 10 && !$('ap_form').elements.watts.value) $('ap_form').elements.watts.value = Math.round(r.w);
+  } catch(e){ st.textContent = 'Não consegui ler: ' + e.message; }
+};
+
 async function loadAppliances(){
   const a = await j('/api/appliances?days=14');
   $('ap_note').innerHTML = `Gasto/mês: kWh por uso (ou potência × duração) × vezes por semana, a ${fmt(a.price,3)} €/kWh. `
@@ -458,14 +489,15 @@ async function loadAppliances(){
     const m = p.measured, b = p.best;
     return `<tr><td>${esc(p.name)}</td><td>${fmt(p.watts)} W</td><td>${fmt(p.minutes)} min × ${fmt(p.per_week,1)}/sem</td>`
       + `<td>${fmt(p.kwh_use,2)}</td><td>${fmt(p.kwh_month,1)} kWh · ${eur(p.eur_month)}</td>`
-      + `<td>${m ? fmt(m.kwh_month,1) + ' kWh · ' + m.count + ' vezes' : '–'}</td>`
+      + `<td>${m ? fmt(m.kwh_month,1) + ' kWh · ' + m.count + ' vezes' + (m.source === 'tomada' ? ` <span class="sub">(tomada, ${fmt(m.days,1)} dias)</span>` : '') : '–'}</td>`
       + `<td>${m && m.grid_pct != null ? fmt(m.grid_pct) + '% · ' + eur(m.eur_month) + '/mês' : '–'}</td>`
+      + `<td id="plug_${p.id}">${p.plug_ip ? plugCell(p.plug) : '–'}</td>`
       + `<td>${b ? b.start + '–' + b.end : (p.flexible ? '–' : 'fixo')}</td><td>${b ? fmt(b.solar_pct) + '%' : '–'}</td>`
       + `<td>${b ? eur(b.save_eur_use) : '–'}</td>`
       + `<td style="white-space:nowrap"><button class="btn sm" data-edit="${p.id}">Editar</button> <button class="btn sm" data-del="${p.id}">✕</button></td></tr>`
-      + (m && m.times.length ? `<tr><td colspan="11" class="sub" style="text-align:left;white-space:normal">Últimas vezes: `
-        + m.times.map(t => `${t.t.slice(3,5)}/${t.t.slice(0,2)} ${t.t.slice(6)}${t.grid_pct != null ? ' (' + t.grid_pct + '% rede)' : ''}`).join(' · ') + '</td></tr>' : '');
-  }).join('') : '<tr><td colspan="11" class="sub">Ainda sem aparelhos. Registe-os abaixo ou com o botão “Registar” nos eventos de consumo.</td></tr>';
+      + (m && m.times.length ? `<tr><td colspan="12" class="sub" style="text-align:left;white-space:normal">Últimas vezes: `
+        + m.times.map(t => `${t.t.slice(3,5)}/${t.t.slice(0,2)} ${t.t.slice(6)}${t.secs != null ? ' · ' + dur(t.secs) + ' · ' + fmt(t.kwh,2) + ' kWh' : ''}${t.grid_pct != null ? ' (' + t.grid_pct + '% rede)' : ''}`).join(' · ') + '</td></tr>' : '');
+  }).join('') : '<tr><td colspan="12" class="sub">Ainda sem aparelhos. Registe-os abaixo ou com o botão “Registar” nos eventos de consumo.</td></tr>';
   window._apps = a.appliances;
   // perfil do excedente
   const labels = a.profile.map((_, i) => String(Math.floor(i/4)).padStart(2,'0') + ':' + String(i%4*15).padStart(2,'0'));
@@ -484,7 +516,7 @@ document.addEventListener('click', async ev => {
     f.reset(); f.elements.id.value = ''; f.elements.watts.value = t.dataset.reg; f.elements.minutes.value = t.dataset.min; f.elements.name.focus();
   } else if (t.dataset.edit){
     const p = window._apps.find(p => p.id == t.dataset.edit);
-    for (const k of ['id','name','watts','minutes','per_week','kwh_use']) f.elements[k].value = p[k] ?? '';
+    for (const k of ['id','name','watts','minutes','per_week','kwh_use','plug_ip']) f.elements[k].value = p[k] ?? '';
     f.elements.flexible.checked = !!p.flexible; f.elements.name.focus();
   } else if (t.dataset.del){
     const p = window._apps.find(p => p.id == t.dataset.del);
@@ -502,7 +534,7 @@ $('ap_form').addEventListener('submit', async ev => {
   try {
     await post('/api/appliances', {id: f.elements.id.value || null, name: f.elements.name.value, watts: +f.elements.watts.value,
       minutes: +f.elements.minutes.value, per_week: +f.elements.per_week.value, flexible: f.elements.flexible.checked,
-      kwh_use: f.elements.kwh_use.value === '' ? null : +f.elements.kwh_use.value});
+      kwh_use: f.elements.kwh_use.value === '' ? null : +f.elements.kwh_use.value, plug_ip: f.elements.plug_ip.value.trim() || null});
     $('ap_err').textContent = ''; f.reset(); f.elements.id.value = ''; loadAppliances(); loadEvents();
   } catch(e){ $('ap_err').textContent = e.message; }
 });
@@ -628,7 +660,7 @@ function shift(n){ const d = new Date(day+'T12:00'); d.setDate(d.getDate()+n); d
 $('prev').onclick = () => shift(-1);
 $('next').onclick = () => shift(1);
 
-async function tick(){ try { await loadNow(); } catch(e){} }
+async function tick(){ try { await loadNow(); } catch(e){} try { await loadPlugs(); } catch(e){} }
 showTab();
 tick(); loadDay(); loadDays(); loadTip(); loadBattery(); loadEvents(); loadStudies(); loadAppliances();
 setInterval(tick, 5000);

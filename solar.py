@@ -6,6 +6,8 @@ Sem dependências externas: stdlib apenas.
 """
 import bisect
 import json
+import re
+import urllib.request
 import os
 import socket
 import sqlite3
@@ -52,6 +54,10 @@ BATTERIES = [
 # Eventos: leitura rápida só do consumo, para apanhar aparelhos que ligam poucos segundos
 FAST_SECONDS = int(os.environ.get("SOLAR_FAST_SECONDS", "5"))
 EVENT_W = float(os.environ.get("SOLAR_EVENT_W", "300"))  # salto mínimo acima do consumo de fundo
+# Tomadas Shelly com medição (lidas pela rede local, sem cloud)
+PLUG_SECONDS = int(os.environ.get("SOLAR_PLUG_SECONDS", "5"))
+PLUG_ON_W = float(os.environ.get("SOLAR_PLUG_ON_W", "10"))  # acima disto o aparelho está a trabalhar
+PLUG_GAP = int(os.environ.get("SOLAR_PLUG_GAP", "600"))  # pausa (s) que ainda conta como o mesmo uso
 # Estudos de tarifa (preços SEM IVA e SEM descontos, para comparar opções iguais entre si)
 POWER_KVA = float(os.environ.get("SOLAR_POWER_KVA", "6.9"))
 # potência €/dia por kVA; os valores abaixo de 6,9 são proporcionais (estimativa): confirmar com o comercializador
@@ -400,8 +406,16 @@ def init_appliances():
         # energia por uso tirada da etiqueta (kWh/100 ciclos ÷ 100); vazio = potência × duração
         if "kwh_use" not in {r[1] for r in con.execute("PRAGMA table_info(appliances)")}:
             con.execute("ALTER TABLE appliances ADD COLUMN kwh_use REAL")
+        if "plug_ip" not in {r[1] for r in con.execute("PRAGMA table_info(appliances)")}:
+            con.execute("ALTER TABLE appliances ADD COLUMN plug_ip TEXT")
         if "appliance_id" not in {r[1] for r in con.execute("PRAGMA table_info(events)")}:
             con.execute("ALTER TABLE events ADD COLUMN appliance_id INTEGER")
+        # tomadas: energia por dia (e a parte comprada à rede) e cada uso do aparelho
+        # known_wh: a energia em que se sabia a origem (sol ou rede); sem leitura do inversor não conta
+        con.execute("CREATE TABLE IF NOT EXISTS plug_daily (day TEXT, appliance_id INTEGER, wh REAL, grid_wh REAL, "
+                    "known_wh REAL, secs REAL, PRIMARY KEY (day, appliance_id))")
+        con.execute("CREATE TABLE IF NOT EXISTS plug_runs (appliance_id INTEGER, start TEXT, end TEXT, secs REAL, "
+                    "wh REAL, grid_wh REAL, known_wh REAL, peak_w REAL, PRIMARY KEY (appliance_id, start))")
 
 
 def appliances():
@@ -415,6 +429,8 @@ def match_appliance(ev, apps):
         return ev["appliance_id"]
     best = None
     for a in apps:
+        if a.get("plug_ip"):  # com tomada, a medição é a da tomada
+            continue
         d = abs(ev["avg_w"] - a["watts"]) / a["watts"]
         if d <= APP_TOL and (best is None or d < best[1]):
             best = (a["id"], d)
@@ -496,6 +512,7 @@ def api_appliances(days=14):
             free[s + i] = max(0.0, free[s + i] - avg_w(a))
         plan[a["id"]] = (s, n, cov)
 
+    plugs = plug_summary(days)
     hm = lambda slot: "%02d:%02d" % divmod(slot * 15, 60)
     out = []
     for a in apps:
@@ -514,6 +531,19 @@ def api_appliances(days=14):
                              "grid_pct": round(m["grid_wh"] / m["wh"] * 100) if m["wh"] else None,
                              "eur_month": round(m["grid_wh"] / ev_days * 30 / 1000 * PRICE_KWH, 2),
                              "times": m["times"][-8:][::-1]}
+        if a.get("plug_ip"):
+            r["plug"] = {**plugs.get(a["id"], {}), **_plugs.get(a["id"], {})}
+            p = r["plug"]
+            if p.get("days", 0) >= 1 / 24:  # com tomada (pelo menos 1 h medida), o medido é o da tomada
+                r["measured"] = {"source": "tomada", "count": len(p["runs"]),
+                                 "kwh_month": round(p["wh"] / p["days"] * 30 / 1000, 1),
+                                 "grid_pct": round(p["grid_wh"] / p["known_wh"] * 100) if p["known_wh"] else None,
+                                 # a parte da rede aplicada a toda a energia da tomada
+                                 "eur_month": round(p["wh"] * (p["grid_wh"] / p["known_wh"] if p["known_wh"] else 1)
+                                                    / p["days"] * 30 / 1000 * PRICE_KWH, 2),
+                                 "days": round(p["days"], 1),
+                                 "times": [{"t": x["start"][5:16], "grid_pct": x["grid_pct"], "secs": x["secs"],
+                                            "kwh": round(x["wh"] / 1000, 2)} for x in p["runs"][:8]]}
         out.append(r)
     out.sort(key=lambda r: -(r["measured"]["kwh_month"] if r["measured"] else r["kwh_month"]))
     return {"price": PRICE_KWH, "profile_days": prof_days, "events_days": round(ev_days, 1), "tolerance": APP_TOL,
@@ -527,24 +557,29 @@ def save_appliance(d):
     name = str(d.get("name", "")).strip()[:60]
     watts, minutes, per_week = (float(d.get(k) or 0) for k in ("watts", "minutes", "per_week"))
     kwh_use = float(d["kwh_use"]) if d.get("kwh_use") not in (None, "") else None
+    plug_ip = str(d.get("plug_ip") or "").strip() or None
+    if plug_ip and not PLUG_RE.match(plug_ip):
+        raise ValueError("IP da tomada inválido (exemplo: 192.168.1.80)")
     if not name or not (0 < watts <= 10000) or not (0 < minutes <= 1440) or not (0 <= per_week <= 100):
         raise ValueError("nome, potência (1–10000 W), duração (1–1440 min) e vezes por semana (0–100)")
     if kwh_use is not None and not (0 < kwh_use <= watts * minutes / 60 / 1000 + 1e-9):
         raise ValueError("kWh por uso tem de ser maior que 0 e no máximo potência × duração")
-    vals = (name, watts, minutes, per_week, 1 if d.get("flexible", True) else 0, kwh_use)
+    vals = (name, watts, minutes, per_week, 1 if d.get("flexible", True) else 0, kwh_use, plug_ip)
     with db() as con:
         if d.get("id"):
-            con.execute("UPDATE appliances SET name=?, watts=?, minutes=?, per_week=?, flexible=?, kwh_use=? WHERE id=?",
-                        vals + (int(d["id"]),))
+            con.execute("UPDATE appliances SET name=?, watts=?, minutes=?, per_week=?, flexible=?, kwh_use=?, plug_ip=? "
+                        "WHERE id=?", vals + (int(d["id"]),))
         else:
-            con.execute("INSERT INTO appliances (name, watts, minutes, per_week, flexible, kwh_use) "
-                        "VALUES (?,?,?,?,?,?)", vals)
+            con.execute("INSERT INTO appliances (name, watts, minutes, per_week, flexible, kwh_use, plug_ip) "
+                        "VALUES (?,?,?,?,?,?,?)", vals)
 
 
 def delete_appliance(d):
     with db() as con:
         con.execute("DELETE FROM appliances WHERE id=?", (int(d["id"]),))
         con.execute("UPDATE events SET appliance_id=NULL WHERE appliance_id=?", (int(d["id"]),))
+        con.execute("DELETE FROM plug_daily WHERE appliance_id=?", (int(d["id"]),))
+        con.execute("DELETE FROM plug_runs WHERE appliance_id=?", (int(d["id"]),))
 
 
 def label_event(d):
@@ -552,6 +587,148 @@ def label_event(d):
     with db() as con:
         con.execute("UPDATE events SET appliance_id=? WHERE start=?",
                     (int(aid) if aid not in (None, "") else None, str(d["start"])[:19]))
+
+
+# ---------------------------------------------------------------- Tomadas (Shelly)
+PLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-]{0,62}(:\d{1,5})?$")
+_plugs = {}  # appliance_id -> última leitura da tomada
+
+
+def read_plug(ip):
+    """Potência (W) e energia total (Wh) de uma tomada com medição, lida pela rede local.
+    Shelly Gen2/Gen3 (RPC), Shelly Gen1 e Tasmota (Nous A1T, Athom e outras com Tasmota)."""
+    def get(path):
+        with urllib.request.urlopen("http://%s%s" % (ip, path), timeout=3) as r:
+            return json.loads(r.read())
+
+    def shelly2():
+        d = get("/rpc/Switch.GetStatus?id=0")
+        return float(d["apower"]), float(d["aenergy"]["total"])
+
+    def shelly1():
+        m = get("/status")["meters"][0]  # total em watts-minuto
+        return float(m["power"]), float(m["total"]) / 60
+
+    def tasmota():
+        e = get("/cm?cmnd=Status%2010")["StatusSNS"]["ENERGY"]  # total em kWh
+        return float(e["Power"]), float(e["Total"]) * 1000
+
+    for f in (shelly2, shelly1, tasmota):
+        try:
+            return f()
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                raise IOError("a tomada pede palavra-passe: desligue a autenticação na app ou na página dela")
+        except urllib.error.URLError as e:
+            raise IOError("sem resposta da tomada (%s)" % e.reason)
+        except (OSError, ValueError, KeyError, IndexError, TypeError):
+            pass  # não é este tipo de tomada: tenta o seguinte
+    raise IOError("a tomada respondeu, mas não é Shelly nem Tasmota (ou tem palavra-passe)")
+
+
+def grid_now():
+    """Parte do consumo da casa que está a ser comprada à rede neste momento."""
+    f = _fast
+    if f.get("ts") and (datetime.now() - datetime.strptime(f["ts"], "%Y-%m-%d %H:%M:%S")).total_seconds() < 30:
+        load, imp = f["load"], f["imp"]
+    elif _last.get("ok"):
+        load, imp = _last["p_load"], _last["p_import"]
+    else:
+        return None
+    return min(1.0, imp / load) if load else None
+
+
+def plug_poller():
+    state = {}  # appliance_id -> {"total", "t", "run"}
+    while True:
+        t0 = datetime.now()
+        try:
+            apps = [a for a in appliances() if a.get("plug_ip")]
+        except Exception:
+            apps = []
+        for a in apps:
+            aid, st = a["id"], state.setdefault(a["id"], {"total": None, "t": None, "run": None})
+            t = datetime.now()
+            ts = t.strftime("%Y-%m-%d %H:%M:%S")
+            try:
+                w, total = read_plug(a["plug_ip"])
+            except Exception as e:
+                _plugs[aid] = {**_plugs.get(aid, {}), "ok": False, "error": str(e)[:120], "err_ts": ts}
+                continue
+            g = grid_now()
+            _plugs[aid] = {"ok": True, "w": round(w, 1), "ts": ts, "grid_pct": None if g is None else round(g * 100)}
+            wh = 0.0
+            dt = (t - st["t"]).total_seconds() if st["t"] else 0
+            if st["total"] is not None and 0 <= total - st["total"] <= 10000 * dt / 3600 + 1:
+                wh = total - st["total"]  # contador da tomada; se voltou a zero (reinício), ignora esta leitura
+            st["total"], st["t"] = total, t
+            if dt > 120:  # falhou muito tempo: não conta como tempo medido
+                dt = 0
+            gw, kw = (wh * g, wh) if g is not None else (0.0, 0.0)
+            try:
+                with db() as con:
+                    con.execute("INSERT INTO plug_daily VALUES (?,?,?,?,?,?) ON CONFLICT(day, appliance_id) DO UPDATE SET "
+                                "wh=wh+excluded.wh, grid_wh=grid_wh+excluded.grid_wh, known_wh=known_wh+excluded.known_wh, "
+                                "secs=secs+excluded.secs", (ts[:10], aid, wh, gw, kw, dt))
+                    run = st["run"]
+                    if w >= PLUG_ON_W:
+                        if run is None:
+                            run = st["run"] = {"start": ts, "wh": 0.0, "grid_wh": 0.0, "known_wh": 0.0, "peak": 0.0}
+                        run["last_on"] = t
+                        run["peak"] = max(run["peak"], w)
+                    if run is not None:
+                        run["wh"] += wh
+                        run["grid_wh"] += gw
+                        run["known_wh"] += kw
+                        # termina depois de uma pausa longa (a máquina para entre fases)
+                        if w < PLUG_ON_W and (t - run["last_on"]).total_seconds() > PLUG_GAP:
+                            end = run["last_on"]
+                            secs = (end - datetime.strptime(run["start"], "%Y-%m-%d %H:%M:%S")).total_seconds()
+                            if run["wh"] >= 1:
+                                con.execute("INSERT OR REPLACE INTO plug_runs VALUES (?,?,?,?,?,?,?,?)",
+                                            (aid, run["start"], end.strftime("%Y-%m-%d %H:%M:%S"), round(secs),
+                                             round(run["wh"], 1), round(run["grid_wh"], 1), round(run["known_wh"], 1),
+                                             round(run["peak"])))
+                            st["run"] = None
+                    _plugs[aid]["running"] = st["run"] is not None
+                    if st["run"]:
+                        r = st["run"]
+                        _plugs[aid]["run"] = {"start": r["start"], "wh": round(r["wh"], 1),
+                                              "grid_pct": round(r["grid_wh"] / r["known_wh"] * 100) if r["known_wh"] else None}
+            except Exception:
+                pass
+        time.sleep(max(1.0, PLUG_SECONDS - (datetime.now() - t0).total_seconds()))
+
+
+def plug_summary(days=30):
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    out = {}
+    with db() as con:
+        for r in con.execute("SELECT appliance_id, sum(wh) wh, sum(grid_wh) g, sum(known_wh) k, sum(secs) s "
+                             "FROM plug_daily WHERE day>=? GROUP BY appliance_id", (since,)):
+            out[r["appliance_id"]] = {"wh": r["wh"] or 0, "grid_wh": r["g"] or 0, "known_wh": r["k"] or 0,
+                                      "days": (r["s"] or 0) / 86400, "runs": []}
+        today = datetime.now().strftime("%Y-%m-%d")
+        for r in con.execute("SELECT appliance_id, wh, grid_wh FROM plug_daily WHERE day=?", (today,)):
+            out.setdefault(r["appliance_id"], {"wh": 0, "grid_wh": 0, "days": 0, "runs": []})
+            out[r["appliance_id"]]["today_wh"] = round(r["wh"] or 0, 1)
+        for r in con.execute("SELECT * FROM plug_runs WHERE start>=? ORDER BY start DESC", (since,)):
+            if r["appliance_id"] in out:
+                out[r["appliance_id"]]["runs"].append(
+                    {"start": r["start"], "secs": r["secs"], "wh": r["wh"], "peak_w": r["peak_w"],
+                     "grid_pct": round(r["grid_wh"] / r["known_wh"] * 100) if r["known_wh"] else None})
+    return out
+
+
+def api_plug_test(d):
+    ip = str(d.get("ip", "")).strip()
+    if not PLUG_RE.match(ip):
+        raise ValueError("IP da tomada inválido (exemplo: 192.168.1.80)")
+    try:
+        w, total = read_plug(ip)
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:160]}
+    return {"ok": True, "w": round(w, 1), "total_kwh": round(total / 1000, 2)}
 
 
 # ---------------------------------------------------------------- API
@@ -728,6 +905,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/appliances":
             n = max(1, min(int(params.get("days", "14")), 90))
             return self._send(200, json.dumps(api_appliances(n)), "application/json")
+        if path == "/api/plugs":
+            return self._send(200, json.dumps({str(k): v for k, v in _plugs.items()}, default=str), "application/json")
         if path == "/api/tip":
             return self._send(200, json.dumps(api_tip()), "application/json")
         if path == "/api/today":
@@ -740,16 +919,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         actions = {"/api/appliances": save_appliance, "/api/appliances/delete": delete_appliance,
-                   "/api/events/label": label_event}
+                   "/api/events/label": label_event, "/api/plug/test": api_plug_test}
         path = self.path.partition("?")[0]
         if path not in actions:
             return self._send(404, "not found", "text/plain")
         try:
             n = int(self.headers.get("Content-Length") or 0)
-            actions[path](json.loads(self.rfile.read(min(n, 10000)) or b"{}"))
+            res = actions[path](json.loads(self.rfile.read(min(n, 10000)) or b"{}"))
         except (ValueError, KeyError, TypeError) as e:
             return self._send(400, json.dumps({"error": str(e)}), "application/json")
-        self._send(200, json.dumps({"ok": True}), "application/json")
+        self._send(200, json.dumps(res or {"ok": True}), "application/json")
 
     def log_message(self, format, *args):
         pass
@@ -762,4 +941,5 @@ if __name__ == "__main__":
     load_last()
     threading.Thread(target=poller, daemon=True).start()
     threading.Thread(target=fast_poller, daemon=True).start()
+    threading.Thread(target=plug_poller, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), Handler).serve_forever()

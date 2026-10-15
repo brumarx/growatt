@@ -29,7 +29,7 @@ A página está dividida em separadores. No computador aparecem numa barra por b
 | **Histórico** | Os últimos 30 dias, as linhas de painéis, os totais desde a instalação e o estado do inversor |
 | **Estudos** | A potência contratada e a escolha entre tarifa simples e bi-horária |
 | **Bateria** | Quanto teriam poupado as baterias no inversor e as de tomada |
-| **Guia** (`/guia`) | Preços e compatibilidade das baterias e os passos para vender o excedente |
+| **Guia** (`/guia`) | Preços e compatibilidade das baterias, tomadas para medir os aparelhos e os passos para vender o excedente |
 
 ### Registar os aparelhos
 
@@ -42,6 +42,8 @@ Para cada aparelho são precisos a potência (W), a duração de um uso (min) e 
 1. **Aparelho comum (valores típicos):** escolher na lista (máquina de lavar roupa, máquina de lavar loiça, forno, placa de indução, frigorífico, chaleira, carro elétrico) preenche tudo com valores típicos (fontes: Repsol e DECO Proteste). Depois é só ajustar as vezes por semana.
 2. **📏 Medir com o contador:** com o aparelho desligado, carregar no botão (mede o consumo de fundo durante cerca de 20 s); ligar o aparelho e carregar em **Já liguei** (mede cerca de 30 s). A diferença fica na potência. Usa a leitura de 5 s do inversor; durante a medição não convém ligar ou desligar outras coisas.
 3. **Etiqueta energética:** o campo **kWh por uso** aceita o valor da etiqueta. Máquinas de lavar roupa e loiça: "kWh/100 ciclos" ÷ 100. Frigorífico: "kWh/ano" ÷ 365, com 1440 min e 7 vezes por semana. A potência está na chapa de características (atrás do aparelho ou na porta).
+
+4. **Tomada com medição (o mais exato):** escrever o IP de uma tomada Shelly (Gen1, Gen2 ou Gen3) ou de uma tomada com Tasmota (por exemplo Nous A1T ou Athom) e carregar em **Testar**. O painel lê a tomada a cada 5 s pela rede de casa, sem cloud, e guarda a energia de cada dia, cada uso (início, duração, kWh) e a parte comprada à rede nesse momento. Com tomada, o "Medido/mês" passa a ser o da tomada e os eventos de consumo deixam de ser atribuídos a esse aparelho pela potência. A lista de tomadas que o painel lê (e das que não lê, como Tapo, Tuya, Sonoff e Xiaomi) está no guia, em `/guia#tomadas`.
 
 Na tabela aparecem:
 
@@ -103,6 +105,8 @@ Inversor Growatt ──Modbus TCP :502──▶ solar.py ──▶ solar.db (SQL
 | `GET /api/appliances?days=14` | Os aparelhos registados: gasto declarado e medido, parte comprada à rede e melhor hora |
 | `POST /api/appliances` | Cria ou altera um aparelho (`{id?, name, watts, minutes, per_week, flexible}`) |
 | `POST /api/appliances/delete` | Apaga um aparelho (`{id}`) |
+| `GET /api/plugs` | A leitura atual de cada tomada (W, uso em curso, % da rede) |
+| `POST /api/plug/test` | Lê uma tomada pelo IP (`{ip}`), para testar antes de guardar |
 | `POST /api/events/label` | Marca um evento de consumo como sendo de um aparelho (`{start, appliance_id}`) |
 
 Os totais por dia calculam-se pela diferença dos contadores totais do inversor. Os contadores "hoje" do próprio inversor só voltam a zero quando ele acorda, por isso de madrugada ainda mostrariam o dia anterior.
@@ -248,6 +252,9 @@ Tudo se configura por variáveis de ambiente. Para as definir, acrescente linhas
 | `SOLAR_RENT_MONTH` | `0` | A renda mensal, se o sistema for alugado. Mostra a poupança contra o aluguer |
 | `SOLAR_FAST_SECONDS` | `5` | O intervalo da leitura rápida do consumo, para os eventos |
 | `SOLAR_EVENT_W` | `300` | O salto mínimo, em W, para contar como evento |
+| `SOLAR_PLUG_SECONDS` | `5` | O intervalo de leitura das tomadas |
+| `SOLAR_PLUG_ON_W` | `10` | Acima destes W, o aparelho da tomada está a trabalhar |
+| `SOLAR_PLUG_GAP` | `600` | A pausa, em segundos, que ainda conta como o mesmo uso (as máquinas param entre fases) |
 | `SOLAR_POWER_KVA` | `6.9` | A potência contratada atual |
 | `SOLAR_POWER_PRICES` | `3.45:0.3150,…,6.9:0.5780` | O preço da potência por kVA, em €/dia sem IVA |
 | `SOLAR_SIMPLE_KWH` | `0.1671` | O kWh da tarifa simples, sem IVA nem desconto |
