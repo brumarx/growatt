@@ -57,6 +57,18 @@ table.t tr:last-child td{border-bottom:0}
 .scroll{overflow-x:auto}
 a{color:var(--home)}
 .links{font-size:14px}
+nav.tabs{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 14px;border-bottom:1px solid var(--line)}
+nav.tabs a{padding:8px 12px;text-decoration:none;color:var(--muted);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px}
+nav.tabs a.on{color:var(--ink);border-bottom-color:var(--sun)}
+[data-tab][hidden]{display:none}
+form.app{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto auto;gap:8px;align-items:end;margin-top:10px}
+form.app label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+form.app input[type=text],form.app input[type=number],select{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-width:0}
+form.app .chk{flex-direction:row;align-items:center;gap:6px;white-space:nowrap}
+@media (max-width:820px){form.app{grid-template-columns:1fr 1fr}}
+.btn{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:5px 10px;font:inherit;cursor:pointer}
+.btn.pri{background:var(--home);color:#fff;border-color:var(--home)}
+.btn.sm{padding:2px 8px;font-size:13px}
 nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;
   padding:4px 10px;font:inherit;cursor:pointer}
 </style>
@@ -65,10 +77,21 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
 <div class="wrap">
   <header>
     <h1>☀️ Solar — Casa</h1>
-    <div class="links"><a href="/guia">Guia: bateria e venda à rede →</a></div>
     <div class="status"><span id="dot" class="dot"></span><span id="st">a ligar ao inversor…</span></div>
   </header>
+  <nav class="tabs" id="tabs">
+    <a href="#agora">Agora</a><a href="#aparelhos">Aparelhos</a><a href="#historico">Histórico</a>
+    <a href="#estudos">Estudos</a><a href="#bateria">Bateria</a><a href="/guia">Guia →</a>
+  </nav>
 
+<div data-tab="agora">
+  <div class="tip" id="tip" style="margin-bottom:12px">
+    <div id="tip_now" style="display:none;margin-bottom:8px"></div>
+    <div><b>Melhor altura para gastar:</b> <span id="tip_win">–</span></div>
+    <div class="sub" id="tip_win_note"></div>
+    <div style="margin-top:8px" id="tip_save"></div>
+    <div class="sub" style="margin-top:6px">Cada kWh gasto com sol, em vez de comprado à noite, poupa <b id="tip_eur">–</b> (<span id="tip_lbl"></span>, com IVA). <a href="#aparelhos">Melhor hora de cada aparelho →</a></div>
+  </div>
   <div class="grid g4">
     <div class="card sun"><h2>Painéis</h2><div class="big"><span id="ppv">–</span><span class="unit">W</span></div><div class="sub">a produzir agora</div></div>
     <div class="card home"><h2>Casa</h2><div class="big"><span id="pload">–</span><span class="unit">W</span></div><div class="sub">a gastar agora</div></div>
@@ -99,7 +122,10 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
     <div class="card"><div class="chartbox"><canvas id="cDay"></canvas></div></div>
   </section>
 
-  <section>
+</div>
+
+<div data-tab="historico" hidden>
+  <section style="margin-top:0">
     <h3>Últimos 30 dias</h3>
     <div class="card"><div class="chartbox"><canvas id="cDays"></canvas></div></div>
   </section>
@@ -140,16 +166,12 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
         <dt>Última leitura</dt><dd id="i_ts">–</dd>
       </dl>
     </div>
-    <div class="tip" id="tip">
-      <div id="tip_now" style="display:none;margin-bottom:8px"></div>
-      <div><b>Melhor altura para gastar:</b> <span id="tip_win">–</span></div>
-      <div class="sub" id="tip_win_note"></div>
-      <div style="margin-top:8px" id="tip_save"></div>
-      <div class="sub" style="margin-top:6px">Cada kWh que gastas com sol, em vez de o comprar à noite, poupa <b id="tip_eur">–</b> (<span id="tip_lbl"></span>, com IVA).</div>
-    </div>
   </section>
 
-  <section>
+</div>
+
+<div data-tab="estudos" hidden>
+  <section style="margin-top:0">
     <h3>Estudos automáticos</h3>
     <div class="grid g2">
       <div class="card">
@@ -173,34 +195,80 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
     </div>
   </section>
 
+</div>
+
+<div data-tab="aparelhos" hidden>
+  <section style="margin-top:0">
+    <h3>Aparelhos da casa</h3>
+    <div class="card">
+      <div class="sub" id="ap_note" style="margin:0 0 8px">–</div>
+      <div class="scroll"><table class="t">
+        <thead><tr><th>Aparelho</th><th>Potência</th><th>Uso</th><th>kWh/uso</th><th>Gasto/mês</th><th>Medido/mês</th><th>Da rede</th><th>Melhor hora</th><th>Com sol</th><th>Poupa/uso</th><th></th></tr></thead>
+        <tbody id="ap_rows"></tbody>
+      </table></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
+        <select id="ap_preset"><option value="">Aparelho comum (valores típicos)…</option></select>
+        <button class="btn" type="button" id="ms_btn">📏 Medir com o contador</button>
+        <span class="sub" id="ms_st"></span>
+      </div>
+      <form class="app" id="ap_form">
+        <input type="hidden" name="id">
+        <label>Aparelho<input type="text" name="name" required maxlength="60" placeholder="Máquina da roupa"></label>
+        <label>Potência (W)<input type="number" name="watts" required min="1" max="10000" step="1"></label>
+        <label>Duração (min)<input type="number" name="minutes" required min="1" max="1440" step="1"></label>
+        <label>Vezes/semana<input type="number" name="per_week" required min="0" max="100" step="0.5"></label>
+        <label>kWh por uso<input type="number" name="kwh_use" min="0" step="0.01" placeholder="etiqueta"></label>
+        <label class="chk"><input type="checkbox" name="flexible" checked> muda de hora</label>
+        <span><button class="btn pri" type="submit">Guardar</button> <button class="btn" type="reset">Limpar</button></span>
+      </form>
+      <div class="sub warn" id="ap_err"></div>
+      <details class="sub" style="margin-top:8px"><summary>Onde encontrar estes valores</summary>
+        <ul>
+          <li><b>Potência (W):</b> na chapa de características do aparelho (atrás ou na porta), ou no manual.</li>
+          <li><b>kWh por uso:</b> na etiqueta energética. Máquinas de lavar roupa e loiça: “kWh/100 ciclos” ÷ 100. Frigorífico: “kWh/ano” ÷ 365, com 1440 min e 7 vezes por semana. Vazio = potência × duração.</li>
+          <li><b>Medir com o contador:</b> usa a leitura de 5 s do consumo da casa. Mede só o aparelho que for ligado durante a medição; os outros devem ficar como estão.</li>
+          <li><b>Valores típicos</b> (lista acima): <a href="https://www.repsol.pt/particulares/assessoramento/eletrodomesticos-que-consomem-mais-energia/">Repsol</a> (kWh por ciclo, modo eco) e <a href="https://www.deco.proteste.pt/casa-energia/eletricidade-gas/noticias/quais-eletrodomesticos-gastam-mais-energia">DECO Proteste</a> (kWh/ano). A potência de pico vem da chapa de modelos comuns; confirme no seu aparelho.</li>
+        </ul>
+      </details>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h2>Excedente médio por quarto de hora</h2>
+      <div class="sub" id="pf_note">–</div>
+      <div class="chartbox" style="height:220px"><canvas id="cProf"></canvas></div>
+    </div>
+  </section>
   <section>
     <h3>Eventos de consumo</h3>
     <div class="card">
       <div class="sub" id="ev_note" style="margin:0 0 8px">–</div>
       <h2>Por aparelho (mesma potência)</h2>
       <div class="scroll"><table class="t">
-        <thead><tr><th>Potência</th><th>Vezes</th><th>Duração média</th><th>Energia/dia</th><th>Quando</th></tr></thead>
+        <thead><tr><th>Potência</th><th>Vezes</th><th>Duração média</th><th>Energia/dia</th><th>Quando</th><th></th></tr></thead>
         <tbody id="ev_groups"></tbody>
       </table></div>
       <h2 style="margin-top:14px">Últimos eventos</h2>
       <div class="scroll"><table class="t">
-        <thead><tr><th>Início</th><th>Duração</th><th>Acima do fundo</th><th>Pico</th><th>Fundo</th><th>Energia</th></tr></thead>
+        <thead><tr><th>Início</th><th>Duração</th><th>Acima do fundo</th><th>Pico</th><th>Fundo</th><th>Energia</th><th>Aparelho</th></tr></thead>
         <tbody id="ev_rows"></tbody>
       </table></div>
     </div>
   </section>
 
-  <section>
+</div>
+
+<div data-tab="bateria" hidden>
+  <section style="margin-top:0">
     <h3>Bateria: quanto teria poupado</h3>
     <div class="card">
       <div class="sub" id="bat_note" style="margin:0 0 8px">–</div>
       <div class="scroll"><table class="t">
-        <thead><tr><th>Bateria</th><th>Útil</th><th>Energia devolvida</th><th>Poupança/ano</th><th>Custo instalada</th><th>Retorno</th></tr></thead>
+        <thead><tr><th>Bateria</th><th>Liga a</th><th>Útil</th><th>Devolve até</th><th>Ida e volta</th><th>Energia devolvida</th><th>Poupança/ano</th><th>Custo</th><th>Retorno</th></tr></thead>
         <tbody id="bat_rows"></tbody>
       </table></div>
-      <div class="sub" style="margin-top:8px">Simulação minuto a minuto com as leituras reais. <a href="/guia#bateria">Preços e compatibilidade →</a></div>
+      <div class="sub" style="margin-top:8px">Simulação minuto a minuto com as leituras reais. <a href="/guia#bateria">Preços, compatibilidade e baterias de tomada →</a></div>
     </div>
   </section>
+</div>
 </div>
 
 <script>
@@ -212,9 +280,24 @@ const STATUS = {0:'à espera', 1:'normal ✅', 3:'falha ⚠️'};
 let price = 0.288;
 const localDay = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 let day = localDay(new Date());
-let chartDay, chartDays;
+let chartDay, chartDays, chartProf;
 
 async function j(u){ const r = await fetch(u, {cache:'no-store'}); return r.json(); }
+async function post(u, body){
+  const r = await fetch(u, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status); return d;
+}
+const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// separadores: o endereço (#aparelhos, …) diz qual está aberto
+function showTab(){
+  const t = (location.hash || '#agora').slice(1);
+  const tab = document.querySelector(`[data-tab="${t}"]`) ? t : 'agora';
+  document.querySelectorAll('[data-tab]').forEach(e => e.hidden = e.dataset.tab !== tab);
+  document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + tab));
+  [chartDay, chartDays, chartProf].forEach(c => c && c.resize());
+}
+window.addEventListener('hashchange', showTab);
 
 async function loadNow(){
   const d = await j('/api/now');
@@ -305,23 +388,141 @@ async function loadBattery(){
     + `Média por dia: compra <b>${fmt(b.import_kwh_day,1)} kWh</b> à rede, envia <b>${fmt(b.export_kwh_day,1)} kWh</b>. `
     + `kWh comprado a ${fmt(b.price,3)} €, vendido a ${fmt(b.export_price,3)} €.`
     + (b.days < 30 ? ` <span class="warn">Menos de 30 dias de dados: valores anuais ainda pouco fiáveis.</span>` : '');
-  $('bat_rows').innerHTML = b.days < 1 ? '<tr><td colspan="6" class="sub">A simulação precisa de pelo menos 1 dia completo de leituras.</td></tr>' : b.options.map(o => `<tr><td>${o.name}</td><td>${fmt(o.usable,1)} kWh</td>`
+  $('bat_rows').innerHTML = b.days < 1 ? '<tr><td colspan="9" class="sub">A simulação precisa de pelo menos 1 dia completo de leituras.</td></tr>' : b.options.map(o => `<tr><td>${o.name}</td><td>${o.kind === 'tomada' ? 'tomada' : 'inversor'}</td><td>${fmt(o.usable,1)} kWh</td><td>${fmt(o.discharge_w)} W</td><td>${fmt(o.rte*100)}%</td>`
     + `<td>${fmt(o.kwh_day,1)} kWh/dia</td><td>${eur(o.eur_year)}</td><td>${eur(o.cost)}</td>`
     + `<td>${o.payback_years == null ? '–' : fmt(o.payback_years,1) + ' anos'}</td></tr>`).join('');
 }
 
 const dur = s => s < 60 ? s + ' s' : s < 3600 ? Math.floor(s/60) + ' min ' + (s%60 ? s%60 + ' s' : '') : Math.floor(s/3600) + ' h ' + Math.round(s%3600/60) + ' min';
+let evApps = [];
 async function loadEvents(){
   const e = await j('/api/events?days=7');
+  evApps = e.appliances;
   $('ev_note').textContent = `Consumo lido a cada ${e.fast_seconds} s. Um evento é um salto de pelo menos ${fmt(e.threshold_w)} W acima do consumo de fundo (mediana dos 5 min anteriores). Últimos ${e.days} dias.`;
   const none = (n, msg) => `<tr><td colspan="${n}" class="sub">${msg}</td></tr>`;
   $('ev_groups').innerHTML = e.groups.length ? e.groups.map(g => `<tr><td>≈ ${fmt(g.watts)} W</td><td>${g.count}</td>`
-    + `<td>${dur(g.avg_secs)}</td><td>${fmt(g.wh_day)} Wh</td><td style="white-space:normal">${g.times.map(t => t.slice(6)).join(', ')}</td></tr>`).join('')
-    : none(5, 'Ainda sem eventos registados.');
-  $('ev_rows').innerHTML = e.events.length ? e.events.slice(0, 20).map(r => `<tr><td>${r.start.slice(8,10)}/${r.start.slice(5,7)} ${r.start.slice(11,19)}</td>`
-    + `<td>${dur(r.secs)}</td><td>${fmt(r.avg_w)} W</td><td>${fmt(r.peak_w)} W</td><td>${fmt(r.base_w)} W</td><td>${fmt(r.wh,1)} Wh</td></tr>`).join('')
+    + `<td>${dur(g.avg_secs)}</td><td>${fmt(g.wh_day)} Wh</td><td style="white-space:normal">${g.times.map(t => t.slice(6)).join(', ')}</td>`
+    + `<td><button class="btn sm" data-reg="${g.watts}" data-min="${Math.max(1, Math.round(g.avg_secs/60))}">Registar</button></td></tr>`).join('')
     : none(6, 'Ainda sem eventos registados.');
+  $('ev_rows').innerHTML = e.events.length ? e.events.slice(0, 20).map(r => `<tr><td>${r.start.slice(8,10)}/${r.start.slice(5,7)} ${r.start.slice(11,19)}</td>`
+    + `<td>${dur(r.secs)}</td><td>${fmt(r.avg_w)} W</td><td>${fmt(r.peak_w)} W</td><td>${fmt(r.base_w)} W</td><td>${fmt(r.wh,1)} Wh</td>`
+    + `<td>${evApps.length ? `<select data-ev="${r.start}"><option value="">${r.appliance && !r.manual ? '≈ ' + esc(r.appliance) : '—'}</option>`
+      + evApps.map(a => `<option value="${a.id}"${r.manual && r.appliance_id === a.id ? ' selected' : ''}>${esc(a.name)}</option>`).join('') + '</select>' : ''}</td></tr>`).join('')
+    : none(7, 'Ainda sem eventos registados.');
 }
+
+async function loadAppliances(){
+  const a = await j('/api/appliances?days=14');
+  $('ap_note').innerHTML = `Gasto/mês: kWh por uso (ou potência × duração) × vezes por semana, a ${fmt(a.price,3)} €/kWh. `
+    + `Medido/mês: eventos de consumo dos últimos ${fmt(a.events_days,1)} dias, marcados à mão ou com potência a ±${fmt(a.tolerance*100)}% da do aparelho. `
+    + `Da rede: parte da casa comprada à rede nos minutos desses eventos. `
+    + `Melhor hora: excedente médio de ${a.profile_days} dias; os aparelhos que gastam mais escolhem primeiro. `
+    + (a.unmatched.count ? `Eventos sem aparelho: <b>${a.unmatched.count}</b> (${fmt(a.unmatched.kwh_month,1)} kWh/mês).` : '');
+  $('ap_rows').innerHTML = a.appliances.length ? a.appliances.map(p => {
+    const m = p.measured, b = p.best;
+    return `<tr><td>${esc(p.name)}</td><td>${fmt(p.watts)} W</td><td>${fmt(p.minutes)} min × ${fmt(p.per_week,1)}/sem</td>`
+      + `<td>${fmt(p.kwh_use,2)}</td><td>${fmt(p.kwh_month,1)} kWh · ${eur(p.eur_month)}</td>`
+      + `<td>${m ? fmt(m.kwh_month,1) + ' kWh · ' + m.count + ' vezes' : '–'}</td>`
+      + `<td>${m && m.grid_pct != null ? fmt(m.grid_pct) + '% · ' + eur(m.eur_month) + '/mês' : '–'}</td>`
+      + `<td>${b ? b.start + '–' + b.end : (p.flexible ? '–' : 'fixo')}</td><td>${b ? fmt(b.solar_pct) + '%' : '–'}</td>`
+      + `<td>${b ? eur(b.save_eur_use) : '–'}</td>`
+      + `<td style="white-space:nowrap"><button class="btn sm" data-edit="${p.id}">Editar</button> <button class="btn sm" data-del="${p.id}">✕</button></td></tr>`
+      + (m && m.times.length ? `<tr><td colspan="11" class="sub" style="text-align:left;white-space:normal">Últimas vezes: `
+        + m.times.map(t => `${t.t.slice(3,5)}/${t.t.slice(0,2)} ${t.t.slice(6)}${t.grid_pct != null ? ' (' + t.grid_pct + '% rede)' : ''}`).join(' · ') + '</td></tr>' : '');
+  }).join('') : '<tr><td colspan="11" class="sub">Ainda sem aparelhos. Registe-os abaixo ou com o botão “Registar” nos eventos de consumo.</td></tr>';
+  window._apps = a.appliances;
+  // perfil do excedente
+  const labels = a.profile.map((_, i) => String(Math.floor(i/4)).padStart(2,'0') + ':' + String(i%4*15).padStart(2,'0'));
+  const first = a.profile.findIndex(w => w > 0), last = 95 - [...a.profile].reverse().findIndex(w => w > 0);
+  const lo = first < 0 ? 28 : Math.max(0, first - 2), hi = first < 0 ? 80 : Math.min(96, last + 3);
+  $('pf_note').textContent = `Média dos últimos ${a.profile_days} dias. É a potência que sobra depois do consumo normal da casa.`;
+  const data = {labels: labels.slice(lo, hi), datasets:[{label:'Excedente (W)', data: a.profile.slice(lo, hi), backgroundColor: css('--sell'), borderRadius:2}]};
+  if (chartProf){ chartProf.data = data; chartProf.update('none'); }
+  else { const o = baseOpts(); o.plugins.legend.display = false; chartProf = new Chart($('cProf'), {type:'bar', data, options:o}); }
+}
+
+document.addEventListener('click', async ev => {
+  const t = ev.target, f = $('ap_form');
+  if (t.dataset.reg){
+    location.hash = '#aparelhos';
+    f.reset(); f.elements.id.value = ''; f.elements.watts.value = t.dataset.reg; f.elements.minutes.value = t.dataset.min; f.elements.name.focus();
+  } else if (t.dataset.edit){
+    const p = window._apps.find(p => p.id == t.dataset.edit);
+    for (const k of ['id','name','watts','minutes','per_week','kwh_use']) f.elements[k].value = p[k] ?? '';
+    f.elements.flexible.checked = !!p.flexible; f.elements.name.focus();
+  } else if (t.dataset.del){
+    const p = window._apps.find(p => p.id == t.dataset.del);
+    t.textContent = 'apagar?'; if (t.dataset.armed){ await post('/api/appliances/delete', {id: p.id}); loadAppliances(); loadEvents(); }
+    t.dataset.armed = 1;
+  }
+});
+document.addEventListener('change', async ev => {
+  const t = ev.target;
+  if (t.dataset.ev){ await post('/api/events/label', {start: t.dataset.ev, appliance_id: t.value || null}); loadAppliances(); loadEvents(); }
+});
+$('ap_form').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    await post('/api/appliances', {id: f.elements.id.value || null, name: f.elements.name.value, watts: +f.elements.watts.value,
+      minutes: +f.elements.minutes.value, per_week: +f.elements.per_week.value, flexible: f.elements.flexible.checked,
+      kwh_use: f.elements.kwh_use.value === '' ? null : +f.elements.kwh_use.value});
+    $('ap_err').textContent = ''; f.reset(); f.elements.id.value = ''; loadAppliances(); loadEvents();
+  } catch(e){ $('ap_err').textContent = e.message; }
+});
+
+// aparelhos comuns: kWh por uso (Repsol, modo eco; DECO kWh/ano) e potência de pico típica da chapa
+const PRESETS = [
+  {name:'Máquina de lavar roupa (eco)', watts:2000, minutes:180, per_week:3, kwh_use:0.58, flexible:1},
+  {name:'Máquina de lavar loiça (eco)', watts:1800, minutes:180, per_week:4, kwh_use:0.73, flexible:1},
+  {name:'Forno elétrico', watts:2400, minutes:60, per_week:2, kwh_use:0.82, flexible:1},
+  {name:'Placa de indução', watts:2000, minutes:45, per_week:7, kwh_use:1.2, flexible:0},
+  {name:'Frigorífico combinado', watts:150, minutes:1440, per_week:7, kwh_use:0.57, flexible:0},
+  {name:'Chaleira', watts:2000, minutes:4, per_week:14, kwh_use:null, flexible:0},
+  {name:'Carro elétrico (6 A)', watts:1400, minutes:240, per_week:3, kwh_use:null, flexible:1},
+];
+$('ap_preset').innerHTML += PRESETS.map((p, i) => `<option value="${i}">${p.name}</option>`).join('');
+$('ap_preset').onchange = ev => {
+  const p = PRESETS[ev.target.value], f = $('ap_form');
+  if (!p) return;
+  f.reset(); f.elements.id.value = '';
+  for (const k of ['name','watts','minutes','per_week','kwh_use']) f.elements[k].value = p[k] ?? '';
+  f.elements.flexible.checked = !!p.flexible;
+  ev.target.value = '';
+  $('ms_st').textContent = 'Valores típicos preenchidos: ajuste-os e carregue em Guardar.';
+};
+
+// medir: mediana do consumo (leitura de 5 s) antes e depois de ligar o aparelho
+async function readLoad(n){
+  const v = [];
+  let last = null;
+  while (v.length < n){
+    const f = (await j('/api/now')).fast || {};
+    if (f.ts && f.ts !== last && f.load != null){ v.push(f.load); last = f.ts; }
+    await new Promise(r => setTimeout(r, 2500));
+  }
+  v.sort((a, b) => a - b);
+  return v[Math.floor(v.length / 2)];
+}
+let msStep = 0, msBase = 0;
+$('ms_btn').onclick = async () => {
+  const b = $('ms_btn'), st = $('ms_st');
+  if (msStep === 0){
+    msStep = 1; b.disabled = true;
+    st.textContent = 'Aparelho DESLIGADO: a medir o consumo de fundo (≈ 20 s)…';
+    msBase = await readLoad(4);
+    msStep = 2; b.disabled = false; b.textContent = '▶ Já liguei o aparelho';
+    st.textContent = `Fundo: ${fmt(msBase)} W. Ligue o aparelho e carregue no botão.`;
+  } else if (msStep === 2){
+    b.disabled = true;
+    st.textContent = 'A medir o aparelho (≈ 30 s)…';
+    const on = await readLoad(6), w = Math.round(on - msBase);
+    b.disabled = false; b.textContent = '📏 Medir com o contador'; msStep = 0;
+    if (w < 10){ st.textContent = `Diferença de ${fmt(w)} W: nada medido. Repita com o aparelho a trabalhar.`; return; }
+    $('ap_form').elements.watts.value = w;
+    st.textContent = `Medido: ${fmt(on)} W − ${fmt(msBase)} W de fundo = ${fmt(w)} W. Preenchido na potência.`;
+  }
+};
 
 const kva = v => fmt(v, v % 1 ? 2 : 0).replace(/,?0+$/, '') + ' kVA';
 async function loadStudies(){
@@ -392,13 +593,15 @@ $('prev').onclick = () => shift(-1);
 $('next').onclick = () => shift(1);
 
 async function tick(){ try { await loadNow(); } catch(e){} }
-tick(); loadDay(); loadDays(); loadTip(); loadBattery(); loadEvents(); loadStudies();
+showTab();
+tick(); loadDay(); loadDays(); loadTip(); loadBattery(); loadEvents(); loadStudies(); loadAppliances();
 setInterval(tick, 5000);
 setInterval(() => { if (day === localDay(new Date())) loadDay(); }, 60000);
 setInterval(loadDays, 600000);
 setInterval(loadTip, 1800000);
 setInterval(loadBattery, 1800000);
 setInterval(loadEvents, 60000);
+setInterval(loadAppliances, 300000);
 setInterval(loadStudies, 600000);
 </script>
 </body>

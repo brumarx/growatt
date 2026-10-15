@@ -23,7 +23,10 @@ O programa lê o inversor diretamente por **Modbus TCP**, através do dongle Wi-
 - **Desde a instalação:** os contadores totais do inversor.
 - **Inversor:** o estado, a temperatura, a tensão e a frequência da rede.
 - **Dica:** a janela de horas com mais excedente, calculada a partir das leituras reais dos últimos 7 dias. Serve para saber quando ligar as máquinas.
-- **Bateria:** uma simulação, minuto a minuto, de quanto teriam poupado baterias de 5 e 10 kWh, com o retorno em anos.
+- **Bateria:** uma simulação, minuto a minuto, de quanto teriam poupado as baterias Growatt de 5 e 10 kWh (ligadas ao inversor) e duas baterias de tomada (Zendure SolarFlow 2400 AC+ e Marstek Venus E 3.0, a devolver até 800 W), com o retorno em anos.
+- **Aparelhos:** cada aparelho registado (potência, duração, vezes por semana) com o gasto por mês, o gasto medido pelos eventos de consumo, a parte comprada à rede e a melhor hora para o ligar, calculada com o excedente médio por quarto de hora. Os aparelhos que gastam mais escolhem a hora primeiro, para não ficarem todos à mesma hora. Para quem não sabe os valores: há uma lista de aparelhos comuns com valores típicos (Repsol, DECO), um campo para o kWh por uso da etiqueta energética e um botão **Medir com o contador**, que mede a diferença no consumo da casa (leitura de 5 s) antes e depois de ligar o aparelho.
+
+A página está dividida em separadores: **Agora**, **Aparelhos**, **Histórico**, **Estudos** e **Bateria**. O endereço guarda o separador aberto (por exemplo `/#aparelhos`).
 - **Excedente:** quanto valeria a energia enviada à rede se fosse vendida.
 - **Estudos automáticos:** a **potência contratada** compara os picos de compra à rede (lidos a cada 5 s) com o limite de cada potência e indica a menor com 15% de folga. **Simples ou bi-horária** calcula o custo anual de cada opção com a energia comprada em cada minuto (ciclos diário e semanal).
 - **Eventos de consumo:** o consumo é lido a cada 5 s. Cada salto de 300 W ou mais acima do consumo de fundo fica registado com a hora, a duração, a potência e a energia. Os eventos com a mesma potência são agrupados, porque correspondem normalmente ao mesmo aparelho.
@@ -62,7 +65,11 @@ Inversor Growatt ──Modbus TCP :502──▶ solar.py ──▶ solar.db (SQL
 | `GET /api/power?days=30` | Os picos de compra à rede contra as potências contratadas |
 | `GET /api/tariff?days=30` | Simples ou bi-horária: % em vazio e custo anual de cada opção |
 | `GET /api/events?days=7` | Os eventos de consumo e os grupos por potência |
-| `GET /api/battery?days=30` | A simulação de baterias de 5 e 10 kWh com as leituras reais |
+| `GET /api/battery?days=30` | A simulação de baterias (Growatt no inversor e baterias de tomada) com as leituras reais |
+| `GET /api/appliances?days=14` | Os aparelhos registados: gasto declarado e medido, parte comprada à rede e melhor hora |
+| `POST /api/appliances` | Cria ou altera um aparelho (`{id?, name, watts, minutes, per_week, flexible}`) |
+| `POST /api/appliances/delete` | Apaga um aparelho (`{id}`) |
+| `POST /api/events/label` | Marca um evento de consumo como sendo de um aparelho (`{start, appliance_id}`) |
 
 Os totais por dia calculam-se pela diferença dos contadores totais do inversor. Os contadores "hoje" do próprio inversor só voltam a zero quando ele acorda, por isso de madrugada ainda mostrariam o dia anterior.
 
@@ -214,6 +221,8 @@ Tudo se configura por variáveis de ambiente. Para as definir, acrescente linhas
 | `SOLAR_EXPORT_PRICE` | `0.03` | O preço do kWh vendido à rede, em € |
 | `SOLAR_BATTERY_COST_5` | `2100` | O custo de uma bateria de 5 kWh já instalada, em € |
 | `SOLAR_BATTERY_COST_10` | `3500` | O custo de uma bateria de 10 kWh já instalada, em € |
+| `SOLAR_BATTERY_COST_ZENDURE` | `969` | O preço da Zendure SolarFlow 2400 AC+, em € |
+| `SOLAR_BATTERY_COST_MARSTEK` | `1200` | O preço da Marstek Venus E 3.0, em € |
 
 Os valores que não devem ir para o git ficam em `~/growatt/local.env`, uma linha `SOLAR_...=valor` cada. O serviço lê esse ficheiro, e o `.gitignore` deixa-o fora do repositório.
 

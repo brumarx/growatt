@@ -4,6 +4,7 @@ e serve uma página com produção, consumo e trocas com a rede.
 
 Sem dependências externas: stdlib apenas.
 """
+import bisect
 import json
 import os
 import socket
@@ -34,15 +35,20 @@ RENT_MONTH = float(os.environ.get("SOLAR_RENT_MONTH", "0"))
 # Venda do excedente: indexado ao OMIE menos a comissão do comercializador.
 # OMIE médio 2025 entre as 9h e as 18h ≈ 0,035 €/kWh, menos 25% ≈ 0,026 €/kWh.
 EXPORT_PRICE = float(os.environ.get("SOLAR_EXPORT_PRICE", "0.03"))  # € por kWh vendido
-# Baterias compatíveis com o MIN 4200TL-XH (ARK XH ou APX): custo estimado com instalação, em €.
-# Capacidade útil ≈ 90% da nominal; potência de carga/descarga limitada pelo inversor/BMS.
+# Baterias a simular, com custo em €. Capacidade útil ≈ 90% da nominal.
+# "inversor": ligadas ao MIN 4200TL-XH (ARK XH ou APX), com instalação; precisam de autorização da Otovo.
+# "tomada": baterias AC que se ligam a uma tomada e carregam com o excedente (medidor CT/Shelly no quadro).
+#   Numa tomada partilhada só podem devolver 800 W. Eficiência ida e volta e preços: energienerds.nl, jan. 2026.
 BATTERIES = [
-    {"name": "5 kWh", "usable": 4.5, "max_w": 2500,
+    {"name": "Growatt 5 kWh", "kind": "inversor", "usable": 4.5, "charge_w": 2500, "discharge_w": 2500, "rte": 0.90,
      "cost": float(os.environ.get("SOLAR_BATTERY_COST_5", "2100"))},
-    {"name": "10 kWh", "usable": 9.0, "max_w": 4200,
+    {"name": "Growatt 10 kWh", "kind": "inversor", "usable": 9.0, "charge_w": 4200, "discharge_w": 4200, "rte": 0.90,
      "cost": float(os.environ.get("SOLAR_BATTERY_COST_10", "3500"))},
+    {"name": "Zendure SolarFlow 2400 AC+ (2,4 kWh)", "kind": "tomada", "usable": 2.16, "charge_w": 2400,
+     "discharge_w": 800, "rte": 0.88, "cost": float(os.environ.get("SOLAR_BATTERY_COST_ZENDURE", "969"))},
+    {"name": "Marstek Venus E 3.0 (5,12 kWh)", "kind": "tomada", "usable": 4.6, "charge_w": 2500,
+     "discharge_w": 800, "rte": 0.83, "cost": float(os.environ.get("SOLAR_BATTERY_COST_MARSTEK", "1200"))},
 ]
-BATTERY_EFF = 0.95
 # Eventos: leitura rápida só do consumo, para apanhar aparelhos que ligam poucos segundos
 FAST_SECONDS = int(os.environ.get("SOLAR_FAST_SECONDS", "5"))
 EVENT_W = float(os.environ.get("SOLAR_EVENT_W", "300"))  # salto mínimo acima do consumo de fundo
@@ -53,7 +59,7 @@ POWER_PRICES = {float(k): float(v) for k, v in (x.split(":") for x in os.environ
     "SOLAR_POWER_PRICES", "3.45:0.3150,4.6:0.4100,5.75:0.4940,6.9:0.5780").split(","))}
 SIMPLE_KWH = float(os.environ.get("SOLAR_SIMPLE_KWH", "0.1671"))
 # bi-horária: fora de vazio, vazio (€/kWh) e potência 6,9 kVA (€/dia)
-BI_PRICES = [float(x) for x in os.environ.get("SOLAR_BI_PRICES", "0.1916,0.1108,0.7645").split(",")]  # eficiência em cada sentido (≈ 90% ida e volta)
+BI_PRICES = [float(x) for x in os.environ.get("SOLAR_BI_PRICES", "0.1916,0.1108,0.7645").split(",")]
 BASE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE, "solar.db")
 
@@ -251,7 +257,7 @@ def fast_poller():
                 secs = max((end - ev["start"]).total_seconds(), FAST_SECONDS)
                 try:
                     with db() as con:
-                        con.execute("INSERT OR REPLACE INTO events VALUES (?,?,?,?,?,?,?)", (
+                        con.execute("INSERT OR REPLACE INTO events (start, end, secs, base_w, peak_w, avg_w, wh) VALUES (?,?,?,?,?,?,?)", (
                             ev["start"].strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S"),
                             round(secs), round(ev["base"]), round(ev["peak"]),
                             round(ev["sum"] / max(ev["n"], 1)), round(ev["wh"], 1)))
@@ -373,8 +379,179 @@ def api_events(days=7):
     for g in sorted(groups.values(), key=lambda g: -g["count"]):
         out.append({"watts": g["watts"], "count": g["count"], "avg_secs": round(g["secs"] / g["count"]),
                     "wh_day": round(g["wh"] / days, 1), "times": g["times"][:8]})
+    apps = appliances()
+    names = {a["id"]: a["name"] for a in apps}
+    for r in rows[:50]:
+        a = match_appliance(r, apps)
+        r["appliance"] = names.get(a)
+        r["manual"] = r.get("appliance_id") is not None
     return {"days": days, "threshold_w": EVENT_W, "fast_seconds": FAST_SECONDS,
-            "events": rows[:50], "groups": out}
+            "events": rows[:50], "groups": out, "appliances": [{"id": a["id"], "name": a["name"]} for a in apps]}
+
+
+# ---------------------------------------------------------------- Aparelhos
+APP_TOL = 0.2  # um evento é de um aparelho se a potência acima do fundo estiver a ±20% da dele
+
+
+def init_appliances():
+    with db() as con:
+        con.execute("CREATE TABLE IF NOT EXISTS appliances (id INTEGER PRIMARY KEY, name TEXT NOT NULL, "
+                    "watts REAL NOT NULL, minutes REAL NOT NULL, per_week REAL NOT NULL, flexible INTEGER DEFAULT 1)")
+        # energia por uso tirada da etiqueta (kWh/100 ciclos ÷ 100); vazio = potência × duração
+        if "kwh_use" not in {r[1] for r in con.execute("PRAGMA table_info(appliances)")}:
+            con.execute("ALTER TABLE appliances ADD COLUMN kwh_use REAL")
+        if "appliance_id" not in {r[1] for r in con.execute("PRAGMA table_info(events)")}:
+            con.execute("ALTER TABLE events ADD COLUMN appliance_id INTEGER")
+
+
+def appliances():
+    with db() as con:
+        return [dict(r) for r in con.execute("SELECT * FROM appliances ORDER BY name")]
+
+
+def match_appliance(ev, apps):
+    """O aparelho escolhido à mão; senão, o de potência mais próxima dentro da tolerância."""
+    if ev.get("appliance_id") is not None:
+        return ev["appliance_id"]
+    best = None
+    for a in apps:
+        d = abs(ev["avg_w"] - a["watts"]) / a["watts"]
+        if d <= APP_TOL and (best is None or d < best[1]):
+            best = (a["id"], d)
+    return best[0] if best else None
+
+
+def surplus_profile(days=14):
+    """Excedente médio (W) em cada quarto de hora, nos últimos dias."""
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    with db() as con:
+        rows = con.execute("SELECT CAST(substr(ts,12,2) AS INTEGER)*4 + CAST(substr(ts,15,2) AS INTEGER)/15 slot, "
+                           "avg(p_export) w FROM samples WHERE substr(ts,1,10)>=? GROUP BY slot", (since,)).fetchall()
+        nd = con.execute("SELECT count(DISTINCT substr(ts,1,10)) FROM samples WHERE substr(ts,1,10)>=?",
+                         (since,)).fetchone()[0]
+    prof = [0.0] * 96
+    for r in rows:
+        prof[r["slot"]] = r["w"] or 0.0
+    return prof, nd
+
+
+def best_window(prof, watts, minutes):
+    """Início (quarto de hora) em que o excedente cobre a maior parte do aparelho."""
+    n = max(1, round(minutes / 15))
+    best = (0, 0.0)
+    for s in range(96 - n + 1):
+        cov = sum(min(prof[s + i], watts) for i in range(n)) / (watts * n)
+        if cov > best[1]:
+            best = (s, cov)
+    return best[0], n, best[1]
+
+
+def api_appliances(days=14):
+    apps = appliances()
+    prof, prof_days = surplus_profile(days)
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    with db() as con:
+        evs = [dict(r) for r in con.execute("SELECT * FROM events WHERE start>=? ORDER BY start", (since,))]
+        samples = con.execute("SELECT ts, p_import, p_load FROM samples WHERE ts>=? ORDER BY ts",
+                              (evs[0]["start"][:10] if evs else since,)).fetchall()
+    ts_list = [r["ts"] for r in samples]
+    # dias com eventos registados (a leitura rápida só existe desde a 1.ª versão com eventos)
+    ev_days = 0
+    if evs:
+        first = datetime.strptime(evs[0]["start"], "%Y-%m-%d %H:%M:%S")
+        ev_days = max((datetime.now() - first).total_seconds() / 86400, 1 / 24)
+
+    def grid_share(ev):
+        """Parte do consumo da casa comprada à rede nos minutos do evento."""
+        a = (datetime.strptime(ev["start"], "%Y-%m-%d %H:%M:%S") - timedelta(seconds=60)).strftime("%Y-%m-%d %H:%M:%S")
+        b = (datetime.strptime(ev["end"], "%Y-%m-%d %H:%M:%S") + timedelta(seconds=60)).strftime("%Y-%m-%d %H:%M:%S")
+        win = samples[bisect.bisect_left(ts_list, a):bisect.bisect_right(ts_list, b)]
+        load = sum(r["p_load"] or 0 for r in win)
+        return min(1.0, sum(r["p_import"] or 0 for r in win) / load) if load else None
+
+    meas = {a["id"]: {"count": 0, "wh": 0.0, "grid_wh": 0.0, "times": []} for a in apps}
+    unmatched = {"count": 0, "wh": 0.0}
+    for ev in evs:
+        aid = match_appliance(ev, apps)
+        if aid not in meas:
+            unmatched["count"] += 1
+            unmatched["wh"] += ev["wh"]
+            continue
+        g = grid_share(ev)
+        m = meas[aid]
+        m["count"] += 1
+        m["wh"] += ev["wh"]
+        m["grid_wh"] += ev["wh"] * (g if g is not None else 1)
+        m["times"].append({"t": ev["start"][5:16], "grid_pct": None if g is None else round(g * 100)})
+
+    # melhor hora: os aparelhos que gastam mais escolhem primeiro e ocupam esse excedente
+    free = prof[:]
+    plan = {}
+    use_kwh = lambda a: a["kwh_use"] or a["watts"] * a["minutes"] / 60 / 1000
+    # potência média durante o uso (uma máquina só aquece a água parte do tempo)
+    avg_w = lambda a: min(a["watts"], use_kwh(a) * 1000 / (a["minutes"] / 60))
+    for a in sorted((a for a in apps if a["flexible"]), key=lambda a: -use_kwh(a)):
+        s, n, cov = best_window(free, avg_w(a), a["minutes"])
+        for i in range(n):
+            free[s + i] = max(0.0, free[s + i] - avg_w(a))
+        plan[a["id"]] = (s, n, cov)
+
+    hm = lambda slot: "%02d:%02d" % divmod(slot * 15, 60)
+    out = []
+    for a in apps:
+        kwh_use = use_kwh(a)
+        kwh_month = kwh_use * a["per_week"] * 52 / 12
+        r = {**a, "kwh_use": round(kwh_use, 2), "eur_use": round(kwh_use * PRICE_KWH, 2),
+             "kwh_month": round(kwh_month, 1), "eur_month": round(kwh_month * PRICE_KWH, 2), "best": None}
+        if a["id"] in plan and prof_days:
+            s, n, cov = plan[a["id"]]
+            r["best"] = {"start": hm(s), "end": hm(min(s + n, 96)) if s + n < 96 else "24:00",
+                         "solar_pct": round(cov * 100), "save_eur_use": round(kwh_use * cov * PRICE_KWH, 2)}
+        m = meas[a["id"]]
+        r["measured"] = None
+        if m["count"] and ev_days:
+            r["measured"] = {"count": m["count"], "kwh_month": round(m["wh"] / ev_days * 30 / 1000, 1),
+                             "grid_pct": round(m["grid_wh"] / m["wh"] * 100) if m["wh"] else None,
+                             "eur_month": round(m["grid_wh"] / ev_days * 30 / 1000 * PRICE_KWH, 2),
+                             "times": m["times"][-8:][::-1]}
+        out.append(r)
+    out.sort(key=lambda r: -(r["measured"]["kwh_month"] if r["measured"] else r["kwh_month"]))
+    return {"price": PRICE_KWH, "profile_days": prof_days, "events_days": round(ev_days, 1), "tolerance": APP_TOL,
+            "threshold_w": EVENT_W, "appliances": out,
+            "unmatched": {"count": unmatched["count"],
+                          "kwh_month": round(unmatched["wh"] / ev_days * 30 / 1000, 1) if ev_days else 0},
+            "profile": [round(w) for w in prof]}
+
+
+def save_appliance(d):
+    name = str(d.get("name", "")).strip()[:60]
+    watts, minutes, per_week = (float(d.get(k) or 0) for k in ("watts", "minutes", "per_week"))
+    kwh_use = float(d["kwh_use"]) if d.get("kwh_use") not in (None, "") else None
+    if not name or not (0 < watts <= 10000) or not (0 < minutes <= 1440) or not (0 <= per_week <= 100):
+        raise ValueError("nome, potência (1–10000 W), duração (1–1440 min) e vezes por semana (0–100)")
+    if kwh_use is not None and not (0 < kwh_use <= watts * minutes / 60 / 1000 + 1e-9):
+        raise ValueError("kWh por uso tem de ser maior que 0 e no máximo potência × duração")
+    vals = (name, watts, minutes, per_week, 1 if d.get("flexible", True) else 0, kwh_use)
+    with db() as con:
+        if d.get("id"):
+            con.execute("UPDATE appliances SET name=?, watts=?, minutes=?, per_week=?, flexible=?, kwh_use=? WHERE id=?",
+                        vals + (int(d["id"]),))
+        else:
+            con.execute("INSERT INTO appliances (name, watts, minutes, per_week, flexible, kwh_use) "
+                        "VALUES (?,?,?,?,?,?)", vals)
+
+
+def delete_appliance(d):
+    with db() as con:
+        con.execute("DELETE FROM appliances WHERE id=?", (int(d["id"]),))
+        con.execute("UPDATE events SET appliance_id=NULL WHERE appliance_id=?", (int(d["id"]),))
+
+
+def label_event(d):
+    aid = d.get("appliance_id")
+    with db() as con:
+        con.execute("UPDATE events SET appliance_id=? WHERE start=?",
+                    (int(aid) if aid not in (None, "") else None, str(d["start"])[:19]))
 
 
 # ---------------------------------------------------------------- API
@@ -424,7 +601,7 @@ def api_battery(days=30):
     first, last = (datetime.strptime(rows[i]["ts"], "%Y-%m-%d %H:%M:%S") for i in (0, -1))
     ndays = max((last - first).total_seconds() / 86400, 1 / 24)
     imp_kwh = exp_kwh = 0.0
-    sims = [{"soc": 0.0, "out": 0.0, "in": 0.0, **b} for b in BATTERIES]
+    sims = [{"soc": 0.0, "out": 0.0, "in": 0.0, "eff": b["rte"] ** 0.5, **b} for b in BATTERIES]
     prev_t = first
     for r in rows[1:]:
         t = datetime.strptime(r["ts"], "%Y-%m-%d %H:%M:%S")
@@ -435,19 +612,20 @@ def api_battery(days=30):
         exp_kwh += p_exp * dt / 1000
         for b in sims:
             if p_exp > 0:
-                take = min(min(p_exp, b["max_w"]) * dt / 1000, (b["usable"] - b["soc"]) / BATTERY_EFF)
-                b["soc"] += take * BATTERY_EFF
+                take = min(min(p_exp, b["charge_w"]) * dt / 1000, (b["usable"] - b["soc"]) / b["eff"])
+                b["soc"] += take * b["eff"]
                 b["in"] += take
             elif p_imp > 0:
-                give = min(min(p_imp, b["max_w"]) * dt / 1000, b["soc"] * BATTERY_EFF)
-                b["soc"] -= give / BATTERY_EFF
+                give = min(min(p_imp, b["discharge_w"]) * dt / 1000, b["soc"] * b["eff"])
+                b["soc"] -= give / b["eff"]
                 b["out"] += give
     opts = []
     for b in sims:
         per_day = b["out"] / ndays
         # poupa o kWh comprado, mas perde o que receberia se vendesse esse excedente
         year_eur = (b["out"] * PRICE_KWH - b["in"] * EXPORT_PRICE) / ndays * 365
-        opts.append({"name": b["name"], "usable": b["usable"], "cost": b["cost"],
+        opts.append({"name": b["name"], "kind": b["kind"], "usable": b["usable"], "cost": b["cost"],
+                     "discharge_w": b["discharge_w"], "rte": b["rte"],
                      "kwh_day": round(per_day, 2), "kwh_year": round(per_day * 365),
                      "eur_year": round(year_eur), "cycles_year": round(b["out"] / b["usable"] / ndays * 365),
                      "payback_years": round(b["cost"] / year_eur, 1) if year_eur > 0 else None})
@@ -547,6 +725,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/battery":
             n = max(1, min(int(params.get("days", "30")), 400))
             return self._send(200, json.dumps(api_battery(n)), "application/json")
+        if path == "/api/appliances":
+            n = max(1, min(int(params.get("days", "14")), 90))
+            return self._send(200, json.dumps(api_appliances(n)), "application/json")
         if path == "/api/tip":
             return self._send(200, json.dumps(api_tip()), "application/json")
         if path == "/api/today":
@@ -557,6 +738,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(api_days(n)), "application/json")
         self._send(404, "not found", "text/plain")
 
+    def do_POST(self):
+        actions = {"/api/appliances": save_appliance, "/api/appliances/delete": delete_appliance,
+                   "/api/events/label": label_event}
+        path = self.path.partition("?")[0]
+        if path not in actions:
+            return self._send(404, "not found", "text/plain")
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            actions[path](json.loads(self.rfile.read(min(n, 10000)) or b"{}"))
+        except (ValueError, KeyError, TypeError) as e:
+            return self._send(400, json.dumps({"error": str(e)}), "application/json")
+        self._send(200, json.dumps({"ok": True}), "application/json")
+
     def log_message(self, format, *args):
         pass
 
@@ -564,6 +758,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     init_db()
     init_events()
+    init_appliances()
     load_last()
     threading.Thread(target=poller, daemon=True).start()
     threading.Thread(target=fast_poller, daemon=True).start()

@@ -74,10 +74,10 @@ ul{margin:6px 0;padding-left:20px}
   <div class="card">
     <div class="sub" id="b_note">–</div>
     <div class="scroll"><table>
-      <thead><tr><th>Bateria</th><th class="r">Útil</th><th class="r">Devolvida à casa</th><th class="r">Ciclos/ano</th><th class="r">Poupança/ano</th><th class="r">Custo instalada</th><th class="r">Retorno</th></tr></thead>
+      <thead><tr><th>Bateria</th><th>Liga a</th><th class="r">Útil</th><th class="r">Devolvida à casa</th><th class="r">Ciclos/ano</th><th class="r">Poupança/ano</th><th class="r">Custo</th><th class="r">Retorno</th></tr></thead>
       <tbody id="b_rows"></tbody>
     </table></div>
-    <div class="sub" style="margin-top:8px">A simulação carrega a bateria com o que iria para a rede e descarrega-a quando a casa compraria. Considera 90% de eficiência ida e volta, o limite de potência e a perda da venda desse excedente (a <span id="b_xp">–</span> €/kWh). Garantia típica das baterias: 10 anos.</div>
+    <div class="sub" style="margin-top:8px">A simulação carrega a bateria com o que iria para a rede e descarrega-a quando a casa compraria. Considera a eficiência ida e volta de cada modelo, o limite de potência (800 W a devolver nas de tomada) e a perda da venda desse excedente (a <span id="b_xp">–</span> €/kWh). Garantia típica das baterias: 10 anos.</div>
   </div>
 
   <h3>Baterias compatíveis com o MIN 4200TL-XH</h3>
@@ -103,6 +103,30 @@ ul{margin:6px 0;padding-left:20px}
       <a href="https://www.stralendgroen.nl/en/product/growatt-ark-high-voltage-set-for-xh/">stralendgroen.nl (ARK)</a> ·
       <a href="https://www.offgridtec.com/en/growatt-apx-5.0p-b1-high-voltage-battery-5kwh-lifepo4.html">offgridtec.com</a> ·
       <a href="https://www.todoensolar.com/Growatt-ARK-25H-A1-HV-Lithium-Battery-Module">todoensolar.com</a></div>
+  </div>
+
+  <h3>Baterias de tomada (AC)</h3>
+  <div class="card scroll">
+    <table>
+      <thead><tr><th>Modelo</th><th class="r">Capacidade</th><th class="r">Carga / descarga AC</th><th class="r">Ida e volta</th><th class="r">Preço (IVA incl.)</th></tr></thead>
+      <tbody>
+        <tr><td><b>Zendure SolarFlow 2400 AC+</b></td><td class="r">2,4 kWh<br><span class="sub">modular até 16,8 kWh</span></td><td class="r">2 400 W / 2 400 W</td><td class="r">88%</td><td class="r"><span class="num">700 – 970 €</span></td></tr>
+        <tr><td><b>Marstek Venus E 3.0</b></td><td class="r">5,12 kWh</td><td class="r">2 500 W / 2 500 W</td><td class="r">83%</td><td class="r"><span class="num">1 170 – 1 430 €</span></td></tr>
+        <tr><td><b>Indevolt PowerFlex 2000 Eco</b></td><td class="r">2 kWh<br><span class="sub">modular até 12 kWh</span></td><td class="r">2 400 W / 2 400 W</td><td class="r">81%</td><td class="r"><span class="num">≈ 650 €</span></td></tr>
+      </tbody>
+    </table>
+    <ul class="sub">
+      <li>Ligam-se a uma tomada da casa. Carregam com o que iria para a rede e devolvem quando a casa compra. <b>Não tocam no inversor nem nos painéis.</b></li>
+      <li>Precisam de um medidor no quadro (pinça CT, Shelly ou o medidor da marca) para saber quanto a casa compra ou envia.</li>
+      <li>Numa tomada de um circuito partilhado só devolvem <b>800 W</b>; o máximo exige um circuito dedicado com diferencial. A simulação usa 800 W.</li>
+      <li>Os preços não incluem o medidor.</li>
+      <li>Regras em Portugal: não encontrei texto da DGEG específico para baterias de tomada sem painéis. Confirmar com a DGEG antes de comprar.</li>
+    </ul>
+    <div class="sub">Fontes (jan.–out. 2026): <a href="https://energienerds.nl/index.php/2026/01/10/beste-ac-stekkerbatterij-van-2026-indevolt-powerflex-2000-eco-vs-marstek-venus-e-3-0-vs-zendure-2400-ac">energienerds.nl</a> ·
+      <a href="https://thuisbatterijgids.net/marstek-venus-e-vs-zendure-solarflow-2400-ac/">thuisbatterijgids.net</a> ·
+      <a href="https://www.upwatt.com/zendure-solarflow-2400-ac-plus.html">upwatt.com</a> ·
+      <a href="https://www.wattuneed.com/en/203-battery-plug-and-play">wattuneed.com</a> ·
+      <a href="https://www.portal-energia.com/bateria-solar-lidl-tronic-portugal/">portal-energia.com</a></div>
   </div>
 
   <h3>Uma ou duas baterias?</h3>
@@ -205,7 +229,7 @@ async function j(u){ const r = await fetch(u, {cache:'no-store'}); return r.json
   if (!b.options.length){ $('v_text').textContent = 'ainda sem leituras.'; return; }
   $('b_note').innerHTML = `Base: <b>${fmt(b.days,1)} dias</b> de leituras desde ${b.since.split('-').reverse().join('/')}. `
     + `Média por dia: compra <b>${fmt(b.import_kwh_day,1)} kWh</b>, envia <b>${fmt(b.export_kwh_day,1)} kWh</b>.`;
-  $('b_rows').innerHTML = b.days < 1 ? '<tr><td colspan="7" class="sub">A simulação precisa de pelo menos 1 dia completo de leituras.</td></tr>' : b.options.map(o => `<tr><td>${o.name}</td><td class="r">${fmt(o.usable,1)} kWh</td>`
+  $('b_rows').innerHTML = b.days < 1 ? '<tr><td colspan="8" class="sub">A simulação precisa de pelo menos 1 dia completo de leituras.</td></tr>' : b.options.map(o => `<tr><td>${o.name}</td><td>${o.kind}</td><td class="r">${fmt(o.usable,1)} kWh</td>`
     + `<td class="r">${fmt(o.kwh_day,1)} kWh/dia</td><td class="r">${fmt(o.cycles_year)}</td><td class="r">${eur(o.eur_year)}</td>`
     + `<td class="r">${eur(o.cost)}</td><td class="r">${o.payback_years == null ? '–' : fmt(o.payback_years,1) + ' anos'}</td></tr>`).join('');
   $('u_lim').innerHTML = `compra <b>${fmt(b.import_kwh_day,1)} kWh/dia</b> e sobra <b>${fmt(b.export_kwh_day,1)} kWh/dia</b> nos dias medidos`;
@@ -220,7 +244,9 @@ async function j(u){ const r = await fetch(u, {cache:'no-store'}); return r.json
   const extra = o2.kwh_day - o1.kwh_day;
   $('v_text').innerHTML = `uma bateria de <b>5 kWh</b> poupa <b>${eur(o1.eur_year)}/ano</b> e paga-se em <b>${o1.payback_years ?? '–'} anos</b>. `
     + `A de <b>10 kWh</b> devolve só mais <b>${fmt(extra,1)} kWh/dia</b> (${eur(o2.eur_year - o1.eur_year)}/ano a mais por ${eur(o2.cost - o1.cost)} a mais) `
-    + `e paga-se em <b>${o2.payback_years ?? '–'} anos</b>.`;
+    + `e paga-se em <b>${o2.payback_years ?? '–'} anos</b>.`
+    + (() => { const t = b.options.filter(o => o.kind === 'tomada' && o.payback_years).sort((x, y) => x.payback_years - y.payback_years)[0];
+        return t ? ` De tomada, a de retorno mais curto é a <b>${t.name}</b>: ${eur(t.eur_year)}/ano, <b>${t.payback_years} anos</b>.` : ''; })();
 })();
 </script>
 </body>
