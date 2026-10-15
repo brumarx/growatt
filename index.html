@@ -18,7 +18,7 @@
 body{margin:0;background:var(--bg);color:var(--ink);
   font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .wrap{max-width:1100px;margin:0 auto;padding:16px}
-header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 h1{font-size:22px;margin:0}
 .status{font-size:13px;color:var(--muted)}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted)}
@@ -71,12 +71,36 @@ form.app .chk{flex-direction:row;align-items:center;gap:6px;white-space:nowrap}
 .btn.sm{padding:2px 8px;font-size:13px}
 nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;
   padding:4px 10px;font:inherit;cursor:pointer}
+.mbtn{background:var(--card);border:1px solid var(--line);border-radius:8px;width:38px;height:34px;font-size:19px;line-height:1;color:var(--ink);cursor:pointer;flex:none}
+.drawer{position:fixed;top:0;bottom:0;left:0;width:min(280px,82vw);background:var(--card);border-right:1px solid var(--line);
+  transform:translateX(-100%);transition:transform .2s;z-index:20;padding:14px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.drawer.open{transform:none}
+.shade{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:19;display:none}
+.shade.open{display:block}
+.drawer a{padding:10px 12px;border-radius:8px;text-decoration:none;color:var(--ink);font-weight:600}
+.drawer a:hover{background:var(--bg)}
+.drawer a.on{background:color-mix(in srgb,var(--sun) 20%,transparent)}
+.drawer .grp{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:14px 12px 4px}
+.hleft{display:flex;align-items:center;gap:10px}
+@media (max-width:820px){nav.tabs{display:none}}
 </style>
 </head>
 <body>
+<div class="shade" id="shade"></div>
+<nav class="drawer" id="drawer" aria-label="Menu">
+  <div class="grp" style="margin-top:4px">Painel</div>
+  <a href="/#agora">☀️ Agora</a>
+  <a href="/#aparelhos">🔌 Aparelhos</a>
+  <a href="/#historico">📅 Histórico</a>
+  <a href="/#estudos">📊 Estudos</a>
+  <a href="/#bateria">🔋 Bateria</a>
+  <div class="grp">Guia</div>
+  <a href="/guia#bateria">🔋 Baterias e preços</a>
+  <a href="/guia#venda">⚡ Vender o excedente</a>
+</nav>
 <div class="wrap">
   <header>
-    <h1>☀️ Solar — Casa</h1>
+    <div class="hleft"><button class="mbtn" id="mbtn" aria-label="Menu" aria-expanded="false">☰</button><h1>☀️ Solar — Casa</h1></div>
     <div class="status"><span id="dot" class="dot"></span><span id="st">a ligar ao inversor…</span></div>
   </header>
   <nav class="tabs" id="tabs">
@@ -273,6 +297,18 @@ nav.days button{background:var(--card);color:var(--ink);border:1px solid var(--l
 
 <script>
 const $ = id => document.getElementById(id);
+
+// menu ☰
+const menu = o => { $('drawer').classList.toggle('open', o); $('shade').classList.toggle('open', o); $('mbtn').setAttribute('aria-expanded', o); };
+$('mbtn').onclick = () => menu(!$('drawer').classList.contains('open'));
+$('shade').onclick = () => menu(false);
+$('drawer').onclick = e => { if (e.target.closest('a')) menu(false); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') menu(false); });
+function markMenu(){
+  const here = location.pathname.replace(/\.html$/, '').replace(/^\/index$/, '/') + (location.hash || (location.pathname === '/' ? '#agora' : ''));
+  document.querySelectorAll('#drawer a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === here));
+}
+window.addEventListener('hashchange', markMenu); markMenu();
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const fmt = (v, d=0) => v == null || isNaN(v) ? '–' : Number(v).toLocaleString('pt-PT',{minimumFractionDigits:d,maximumFractionDigits:d});
 const eur = v => fmt(v,2) + ' €';

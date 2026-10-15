@@ -5,14 +5,51 @@ Painel web simples para acompanhar um inversor **Growatt MIN 4200TL-XH** (instal
 O programa lê o inversor diretamente por **Modbus TCP**, através do dongle Wi-Fi, e **apenas lê**: nunca escreve nada no inversor. Não usa a cloud da Growatt e não precisa de dependências externas, só da biblioteca padrão do Python 3. Corre num Raspberry Pi como serviço `systemd` de utilizador.
 
 <p align="center">
-  <img src="docs/img/index.png" alt="Painel solar: potência atual, energia do dia, gráfico do dia e dos últimos 30 dias" width="100%">
+  <img src="docs/img/index.png" alt="Separador Agora: melhor altura para gastar, potência atual, energia do dia e gráfico do dia" width="100%">
 </p>
 
 <p align="center">
-  <img src="docs/img/index-dark.png" alt="Painel em modo escuro" width="64%">
+  <img src="docs/img/index-dark.png" alt="Separador Histórico em modo escuro" width="64%">
   &nbsp;
   <img src="docs/img/mobile.png" alt="Painel no telemóvel" width="22%">
 </p>
+
+## Como usar
+
+A página está dividida em separadores. No computador aparecem numa barra por baixo do título; no telemóvel, e em qualquer ecrã, o botão **☰** abre o menu com todos eles e com as secções do guia. O endereço guarda o separador aberto (por exemplo `http://<ip>:8096/#aparelhos`), por isso cada um pode ficar nos favoritos ou no ecrã principal do telemóvel.
+
+<p align="center">
+  <img src="docs/img/menu.png" alt="Menu ☰ aberto no telemóvel" width="22%">
+</p>
+
+| Separador | O que tem |
+|---|---|
+| **Agora** | A melhor altura para gastar (e um aviso quando há excedente a sair), a potência dos painéis, da casa, da compra e do envio, a energia de hoje e o gráfico do dia |
+| **Aparelhos** | Os aparelhos da casa, quanto gasta cada um, a melhor hora para os ligar, o excedente por quarto de hora e os eventos de consumo |
+| **Histórico** | Os últimos 30 dias, as linhas de painéis, os totais desde a instalação e o estado do inversor |
+| **Estudos** | A potência contratada e a escolha entre tarifa simples e bi-horária |
+| **Bateria** | Quanto teriam poupado as baterias no inversor e as de tomada |
+| **Guia** (`/guia`) | Preços e compatibilidade das baterias e os passos para vender o excedente |
+
+### Registar os aparelhos
+
+<p align="center">
+  <img src="docs/img/aparelhos.png" alt="Separador Aparelhos: tabela, formulário e excedente por quarto de hora" width="100%">
+</p>
+
+Para cada aparelho são precisos a potência (W), a duração de um uso (min) e as vezes por semana. Quem não souber os valores tem três formas de os obter:
+
+1. **Aparelho comum (valores típicos):** escolher na lista (máquina de lavar roupa, máquina de lavar loiça, forno, placa de indução, frigorífico, chaleira, carro elétrico) preenche tudo com valores típicos (fontes: Repsol e DECO Proteste). Depois é só ajustar as vezes por semana.
+2. **📏 Medir com o contador:** com o aparelho desligado, carregar no botão (mede o consumo de fundo durante cerca de 20 s); ligar o aparelho e carregar em **Já liguei** (mede cerca de 30 s). A diferença fica na potência. Usa a leitura de 5 s do inversor; durante a medição não convém ligar ou desligar outras coisas.
+3. **Etiqueta energética:** o campo **kWh por uso** aceita o valor da etiqueta. Máquinas de lavar roupa e loiça: "kWh/100 ciclos" ÷ 100. Frigorífico: "kWh/ano" ÷ 365, com 1440 min e 7 vezes por semana. A potência está na chapa de características (atrás do aparelho ou na porta).
+
+Na tabela aparecem:
+
+- **Gasto/mês:** kWh por uso (ou potência × duração) × vezes por semana, ao preço do kWh.
+- **Medido/mês e Da rede:** a energia dos eventos de consumo desse aparelho e a parte que foi comprada à rede nesses minutos. Um evento conta para o aparelho se a potência estiver a ±20% da dele, ou se tiver sido marcado à mão na lista **Últimos eventos**. Como vários aparelhos têm potências parecidas (chaleira, forno, resistência da máquina), marcar os eventos à mão torna este número fiável.
+- **Melhor hora, Com sol e Poupa/uso:** a janela em que o excedente médio dos últimos 14 dias cobre a maior parte do aparelho. Os aparelhos que gastam mais escolhem primeiro e ocupam esse excedente, para não ficarem todos à mesma hora. Os aparelhos sem "muda de hora" (frigorífico, placa) não têm melhor hora.
+
+Nos **Eventos de consumo**, o botão **Registar** de cada grupo preenche o formulário com a potência e a duração medidas.
 
 ## O que mostra
 
@@ -24,10 +61,7 @@ O programa lê o inversor diretamente por **Modbus TCP**, através do dongle Wi-
 - **Inversor:** o estado, a temperatura, a tensão e a frequência da rede.
 - **Dica:** a janela de horas com mais excedente, calculada a partir das leituras reais dos últimos 7 dias. Serve para saber quando ligar as máquinas.
 - **Bateria:** uma simulação, minuto a minuto, de quanto teriam poupado as baterias Growatt de 5 e 10 kWh (ligadas ao inversor) e duas baterias de tomada (Zendure SolarFlow 2400 AC+ e Marstek Venus E 3.0, a devolver até 800 W), com o retorno em anos.
-- **Aparelhos:** cada aparelho registado (potência, duração, vezes por semana) com o gasto por mês, o gasto medido pelos eventos de consumo, a parte comprada à rede e a melhor hora para o ligar, calculada com o excedente médio por quarto de hora. Os aparelhos que gastam mais escolhem a hora primeiro, para não ficarem todos à mesma hora. Para quem não sabe os valores: há uma lista de aparelhos comuns com valores típicos (Repsol, DECO), um campo para o kWh por uso da etiqueta energética e um botão **Medir com o contador**, que mede a diferença no consumo da casa (leitura de 5 s) antes e depois de ligar o aparelho.
-
-A página está dividida em separadores: **Agora**, **Aparelhos**, **Histórico**, **Estudos** e **Bateria**. O endereço guarda o separador aberto (por exemplo `/#aparelhos`).
-- **Excedente:** quanto valeria a energia enviada à rede se fosse vendida.
+- **Aparelhos:** o gasto de cada aparelho registado, o medido pelos eventos de consumo, a parte comprada à rede e a melhor hora para o ligar. Ver [Registar os aparelhos](#registar-os-aparelhos).
 - **Estudos automáticos:** a **potência contratada** compara os picos de compra à rede (lidos a cada 5 s) com o limite de cada potência e indica a menor com 15% de folga. **Simples ou bi-horária** calcula o custo anual de cada opção com a energia comprada em cada minuto (ciclos diário e semanal).
 - **Eventos de consumo:** o consumo é lido a cada 5 s. Cada salto de 300 W ou mais acima do consumo de fundo fica registado com a hora, a duração, a potência e a energia. Os eventos com a mesma potência são agrupados, porque correspondem normalmente ao mesmo aparelho.
 
@@ -241,7 +275,7 @@ Environment=SOLAR_PRICE_KWH=0.20
 | `solar.py` | O leitor Modbus, a gravação em SQLite e o servidor HTTP |
 | `index.html` | O painel (HTML, CSS e Chart.js) |
 | `guia.html` | O guia: bateria e venda do excedente |
-| `docs/img/` | As capturas de ecrã do README |
+| `docs/img/` | As capturas de ecrã do README (painel, modo escuro, telemóvel, menu, aparelhos, guia) |
 | `solar.service` | A unidade `systemd` de utilizador |
 | `solar.db` | O histórico de leituras. É criado automaticamente e **não é publicado** |
 
