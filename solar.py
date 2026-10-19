@@ -779,6 +779,9 @@ def api_battery(days=30):
     ndays = max((last - first).total_seconds() / 86400, 1 / 24)
     imp_kwh = exp_kwh = 0.0
     sims = [{"soc": 0.0, "out": 0.0, "in": 0.0, "eff": b["rte"] ** 0.5, **b} for b in BATTERIES]
+    # noite: do fim da venda ao fim da tarde até à primeira venda da manhã seguinte;
+    # a primeira noite não conta (a bateria simulada começa vazia)
+    nights, night, selling = [], None, False
     prev_t = first
     for r in rows[1:]:
         t = datetime.strptime(r["ts"], "%Y-%m-%d %H:%M:%S")
@@ -787,7 +790,17 @@ def api_battery(days=30):
         p_imp, p_exp = r["p_import"] or 0, r["p_export"] or 0
         imp_kwh += p_imp * dt / 1000
         exp_kwh += p_exp * dt / 1000
-        for b in sims:
+        if p_exp > 0:
+            if night and t.hour < 14:
+                nights.append(night)
+            night, selling = None, True
+        elif selling and t.hour >= 15:
+            selling = False
+            if t.date() != first.date():
+                night = {"kwh": 0.0, "empty": [None] * len(sims), "grid": [0.0] * len(sims)}
+        if night:
+            night["kwh"] += p_imp * dt / 1000
+        for i, b in enumerate(sims):
             if p_exp > 0:
                 take = min(min(p_exp, b["charge_w"]) * dt / 1000, (b["usable"] - b["soc"]) / b["eff"])
                 b["soc"] += take * b["eff"]
@@ -796,8 +809,16 @@ def api_battery(days=30):
                 give = min(min(p_imp, b["discharge_w"]) * dt / 1000, b["soc"] * b["eff"])
                 b["soc"] -= give / b["eff"]
                 b["out"] += give
+                if night:
+                    night["grid"][i] += p_imp * dt / 1000 - give
+                    if b["soc"] < 0.01 and night["empty"][i] is None:
+                        night["empty"][i] = t
     opts = []
-    for b in sims:
+    for i, b in enumerate(sims):
+        # hora mediana a que esvazia, contada desde o meio-dia para atravessar a meia-noite
+        empties = sorted(n["empty"][i] for n in nights if n["empty"][i])
+        mins = sorted((e.hour * 60 + e.minute - 720) % 1440 for e in empties)
+        med = (mins[len(mins) // 2] + 720) % 1440 if mins else None
         per_day = b["out"] / ndays
         # poupa o kWh comprado, mas perde o que receberia se vendesse esse excedente
         year_eur = (b["out"] * PRICE_KWH - b["in"] * EXPORT_PRICE) / ndays * 365
@@ -805,8 +826,12 @@ def api_battery(days=30):
                      "discharge_w": b["discharge_w"], "rte": b["rte"],
                      "kwh_day": round(per_day, 2), "kwh_year": round(per_day * 365),
                      "eur_year": round(year_eur), "cycles_year": round(b["out"] / b["usable"] / ndays * 365),
-                     "payback_years": round(b["cost"] / year_eur, 1) if year_eur > 0 else None})
+                     "payback_years": round(b["cost"] / year_eur, 1) if year_eur > 0 else None,
+                     "nights": len(nights), "nights_full": sum(1 for n in nights if not n["empty"][i]),
+                     "empty_at": "%02d:%02d" % divmod(med, 60) if med is not None else None,
+                     "night_grid_kwh": round(sum(n["grid"][i] for n in nights) / len(nights), 1) if nights else None})
     return {"days": round(ndays, 1), "since": rows[0]["ts"][:10],
+            "night_kwh": round(sum(n["kwh"] for n in nights) / len(nights), 1) if nights else None,
             "import_kwh_day": round(imp_kwh / ndays, 2), "export_kwh_day": round(exp_kwh / ndays, 2),
             "price": PRICE_KWH, "export_price": EXPORT_PRICE, "options": opts}
 

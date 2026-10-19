@@ -69,6 +69,7 @@ ul{margin:6px 0;padding-left:20px}
   <a href="/#bateria">🔋 Bateria</a>
   <div class="grp">Guia</div>
   <a href="/guia#bateria">🔋 Baterias e preços</a>
+  <a href="/guia#instalar">🛠️ Instalar a bateria</a>
   <a href="/guia#tomadas">🔌 Tomadas para medir</a>
   <a href="/guia#venda">⚡ Vender o excedente</a>
 </nav>
@@ -143,6 +144,7 @@ ul{margin:6px 0;padding-left:20px}
     <ul class="sub">
       <li>Ligam-se a uma tomada da casa. Carregam com o que iria para a rede e devolvem quando a casa compra. <b>Não tocam no inversor nem nos painéis.</b></li>
       <li>Precisam de um medidor no quadro (pinça CT, Shelly ou o medidor da marca) para saber quanto a casa compra ou envia.</li>
+      <li><b>Carregam só com solar</b> no modo automático: o medidor no quadro diz quando a casa está a enviar para a rede e a bateria carrega com essa potência; quando a casa compra, descarrega. A carga pela rede existe mas tem de ser ligada na app (útil só com tarifa bi-horária).</li>
       <li>Numa tomada de um circuito partilhado só devolvem <b>800 W</b>; o máximo exige um circuito dedicado com diferencial. A simulação usa 800 W.</li>
       <li>Os preços não incluem o medidor.</li>
       <li>Regras em Portugal: não encontrei texto da DGEG específico para baterias de tomada sem painéis. Confirmar com a DGEG antes de comprar.</li>
@@ -162,6 +164,64 @@ ul{margin:6px 0;padding-left:20px}
       <li>No inverno sobra menos de dia, por isso a bateria enche menos. Os valores anuais acima assumem que todos os dias são como os dias medidos.</li>
     </ul>
   </div>
+
+  <!-- ================================================================ INSTALAR -->
+  <h2 id="instalar">🛠️ Instalar a bateria, passo a passo</h2>
+  <div class="card">
+    <h3 style="margin-top:0">Baterias de tomada (Zendure, Marstek): faz-se em casa</h3>
+    <div class="sub">São duas peças: o <b>medidor no quadro</b> e a <b>bateria na tomada</b>. A casa é monofásica e o contador da Growatt (SPM-E) está no quadro principal.</div>
+
+    <h3>1. Comprar o medidor certo</h3>
+    <ul>
+      <li><b>Zendure SolarFlow 2400 AC+:</b> Zendure Smart Meter 3CT, Shelly Pro 3EM ou Shelly 3EM.</li>
+      <li><b>Marstek Venus E 3.0:</b> Marstek CT002 / CT003, Shelly Pro 3EM, Shelly EM Gen3 ou Shelly Pro EM-50.</li>
+      <li>O <b>Shelly Pro 3EM</b> serve às duas e também é lido pela rede de casa.</li>
+      <li>Com o Shelly e a Marstek: mudar a porta UDP do Shelly para <b>1010</b>, senão a bateria não o encontra.</li>
+    </ul>
+
+    <h3>2. Montar o medidor no quadro <span class="warn">⚠️ 230 V</span></h3>
+    <ol>
+      <li>Ver se há <b>espaço livre na calha DIN</b> do quadro principal e sinal Wi-Fi junto ao quadro (o telemóvel serve para testar).</li>
+      <li><b>Desligar o interruptor geral</b> do quadro.</li>
+      <li><b>Confirmar que não há tensão</b> nos bornes onde vai ligar, com um detetor de tensão ou um multímetro. Se não tiver como confirmar, parar aqui e chamar um eletricista.</li>
+      <li>Encaixar o medidor na calha.</li>
+      <li>Ligar a alimentação do medidor (<b>L</b> e <b>N</b>) a partir de um disjuntor, como mostra o esquema do manual do medidor.</li>
+      <li>Fechar a <b>pinça só à volta do fio de fase</b> que vem do contador da E-REDES, antes de qualquer disjuntor. Não abraçar fase e neutro juntos. A seta da pinça segue o manual do medidor.</li>
+      <li>Pôr a tampa do quadro e voltar a ligar o geral.</li>
+      <li>Na app do medidor, de dia com sol: a casa deve aparecer a <b>enviar</b> para a rede, com o mesmo valor que o painel mostra em “Agora”. Se aparecer a comprar em vez de enviar, desligar o geral e virar a pinça ao contrário.</li>
+    </ol>
+
+    <h3>3. Ligar a bateria</h3>
+    <ol>
+      <li>Escolher o sítio: dentro de casa, chão firme, perto de uma tomada e com Wi-Fi.</li>
+      <li>Zendure: encaixar o módulo de controlo em cima da bateria. Marstek: é uma peça só.</li>
+      <li>Ligar o cabo AC <b>diretamente à tomada</b>, sem extensões nem tripla.</li>
+      <li>Instalar a app (Zendure ou Marstek), criar conta e adicionar a bateria (Bluetooth e depois Wi-Fi).</li>
+      <li>Na app, associar o medidor do passo 2.</li>
+      <li>Escolher o modo automático (o modo que segue o medidor). <b>Deixar a carga pela rede desligada.</b></li>
+      <li>Deixar a devolução em <b>800 W</b>. Para mais, é preciso um circuito dedicado com diferencial, feito por um eletricista.</li>
+    </ol>
+
+    <h3>4. Confirmar no painel</h3>
+    <ul>
+      <li>De dia, em <a href="/#agora">Agora</a>, o envio para a rede desce enquanto a bateria carrega.</li>
+      <li>À noite, a compra à rede fica perto de zero até a bateria esvaziar, exceto quando a casa pede mais de 800 W.</li>
+    </ul>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <h3 style="margin-top:0">Baterias ligadas ao inversor (Growatt ARK / APX): não é para fazer em casa</h3>
+    <ul>
+      <li>Ligam-se ao inversor em <b>corrente contínua de alta tensão</b>, e o inversor tem de ser configurado para elas.</li>
+      <li>O sistema é da EDEA/Otovo: <b>qualquer bateria ou trabalho no sistema precisa da autorização escrita deles</b> (contrato, cl. 11.9 e 14.2).</li>
+      <li>Passos: (1) pedir a autorização à Otovo por escrito; (2) pedir orçamento a um instalador certificado pela Growatt, ou à própria Otovo; (3) o instalador monta e configura a bateria; (4) pedir a declaração de conformidade e enviá-la à Otovo.</li>
+    </ul>
+  </div>
+  <div class="sub" style="margin-top:8px">Fontes (out. 2026): <a href="https://be.zendure.com/en/products/zendure-solarflow-2400-ac">zendure.com (medidores)</a> ·
+    <a href="https://zendure.fr/products/zendure-solarflow-2400-ac-plus">zendure.fr (montagem)</a> ·
+    <a href="https://www.smartzone.de/marstek-venus-e-3-0-im-test-speicher-fuer-balkonkraftwerke-und-mehr/">smartzone.de (Marstek e Shelly)</a> ·
+    <a href="https://shelly.com/blogs/documentation/shelly-pro-em-50">shelly.com (esquema)</a> ·
+    <a href="https://www.wattuneed.com/en/battery-accessories/27111-compteur-intelligent-marstek-ct002-bluetooth-wifi-0768563822537.html">wattuneed.com (CT002)</a></div>
 
   <!-- ================================================================ TOMADAS -->
   <h2 id="tomadas">🔌 Tomadas para medir cada aparelho</h2>

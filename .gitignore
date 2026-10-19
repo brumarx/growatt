@@ -10,3 +10,4 @@ __pycache__/
 # documentos pessoais (contratos, faturas)
 docs/*.pdf
 docs/*.PDF
+docs/dgeg/
